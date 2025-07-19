@@ -106,30 +106,6 @@ Abra seu navegador em: `http://localhost:8501`
 4. **🔗 Links**: Gere links personalizados para cada GC
 5. **📧 E-mails**: Crie e envie e-mails automáticos
 
-### 4. Para Gerentes Comerciais
-
-1. **🔗 Acesso**: Clique no link recebido por e-mail
-2. **👀 Revisão**: Visualize sua carteira filtrada
-3. **✅ Ação**: Confirme ou altere datas conforme necessário
-4. **💾 Salvamento**: Alterações são salvas automaticamente
-
-## 📋 **Estrutura do Arquivo Excel**
-
-O arquivo Excel deve conter as seguintes colunas:
-
-| Coluna | Descrição | Obrigatório |
-|--------|-----------|-------------|
-| `Revisão Data Faturamento` | Data de faturamento para filtro | ✅ |
-| `Ord.venda` | Número da ordem de venda | ✅ |
-| `GC` | Nome do Gerente Comercial | ✅ |
-| `Vl.Saldo` | Valor do saldo | ✅ |
-| `Saldo` | Volume/quantidade | ✅ |
-| `Nome Emissor` | Nome do cliente | ✅ |
-| `Desc. Material` | Descrição do produto | ✅ |
-| `Grupo` | Grupo de produto | ✅ |
-| `DIRETORIA` | Diretoria responsável | ✅ |
-| `Status crédito` | Status do crédito | ✅ |
-
 ## ⚙️ **Configurações**
 
 ### URL Base
@@ -203,15 +179,6 @@ dashboard-revisao-carteira/
 - **URL Base**: Ajustar para produção na função `generate_personalized_links()`
 - **Segurança**: Sistema usa hash MD5 para links únicos
 - **Dados**: Session state mantém dados durante a sessão
-
-## � **Contato e Suporte**
-
-Este é um projeto desenvolvido especificamente para as necessidades da empresa.
-
-**Para suporte técnico ou dúvidas:**
-- 📧 E-mail: seu.email@empresa.com
-- 💬 Teams: @seu.usuario
-- 📱 WhatsApp: (xx) xxxxx-xxxx
 
 ## 📝 **Notas de Versão**
 
