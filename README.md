@@ -1,49 +1,48 @@
-# 📊 Dashboard Revisão Carteira
+# 📊 Dashboard de Revisão de Dados
 
-> Sistema inteligente para controle e gestão da revisão de carteira de pedidos comerciais
+> Sistema web para controle e acompanhamento de processos de revisão colaborativa
 
 [![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![Streamlit](https://img.shields.io/badge/Streamlit-1.28+-red.svg)](https://streamlit.io/)
-[![Status](https://img.shields.io/badge/Status-Em%20Produção-green.svg)]()
-[![Uso](https://img.shields.io/badge/Uso-Interno-orange.svg)]()
+[![Status](https://img.shields.io/badge/Status-Ativo-green.svg)]()
 
 ## 🎯 **Visão Geral**
 
-O Dashboard Revisão Carteira é uma solução completa para automatizar e acompanhar o processo de revisão de carteiras de pedidos comerciais. O sistema oferece uma interface intuitiva para administradores gerenciarem o processo e links personalizados para que Gerentes Comerciais (GCs) façam suas revisões de forma eficiente.
+Dashboard interativo desenvolvido em Streamlit para gerenciar processos de revisão de dados de forma colaborativa. O sistema oferece uma interface administrativa para controle geral e links personalizados para usuários específicos realizarem suas revisões de forma independente.
 
 ### ✨ **Principais Características**
 
-- 🔄 **Automação completa** do processo de revisão
-- 📧 **Geração automática de e-mails** personalizados
-- 🔗 **Links únicos e seguros** para cada GC
+- 🔄 **Processo automatizado** de revisão
+- 📧 **Geração de notificações** personalizadas
+- 🔗 **Links únicos e seguros** para cada usuário
 - 📈 **Métricas em tempo real** de progresso
 - 🎨 **Interface moderna** e responsiva
-- 💾 **Persistência de dados** entre sessões
-- 📊 **Análises visuais** interativas
+- 💾 **Persistência de dados** durante a sessão
+- 📊 **Visualizações interativas**
 
 ## 🚀 **Funcionalidades**
 
 ### 📋 **Para Administradores**
-- **Upload de carteira**: Importação de arquivos Excel da carteira
-- **Filtro automático**: Por mês de trabalho usando a coluna `Revisão Data Faturamento`
-- **Dashboard completo**: Métricas, gráficos e análises em tempo real
-- **Geração de links**: Links personalizados para cada GC
-- **E-mails automáticos**: Criação e envio via Outlook
-- **Controle de progresso**: Acompanhamento individual por GC
+- **Upload de dados**: Importação de arquivos Excel
+- **Filtros dinâmicos**: Por período, categoria e status
+- **Dashboard completo**: Métricas, gráficos e análises
+- **Geração de links**: Links personalizados para usuários
+- **Sistema de notificação**: Integração com aplicativos de e-mail
+- **Acompanhamento**: Progresso individual e geral
 
-### 👤 **Para Gerentes Comerciais**
-- **Acesso direto**: Via link personalizado e seguro
-- **Interface simplificada**: Foco apenas na revisão
-- **Duas ações simples**: ✅ Confirmar ou 📅 Alterar data
-- **Resumo personalizado**: Por grupo de produtos
-- **Progresso individual**: Acompanhamento de revisões realizadas
+### 👤 **Para Usuários**
+- **Acesso direto**: Via link personalizado
+- **Interface simplificada**: Foco na tarefa específica
+- **Ações simples**: Confirmar ou revisar dados
+- **Resumo personalizado**: Dados específicos do usuário
+- **Progresso individual**: Acompanhamento de tarefas realizadas
 
 ### 📊 **Análises Disponíveis**
-- **Por Status de Crédito**: Liberados, Não liberado, Bloqueados
-- **Por Diretoria**: Distribuição de valor e volume
-- **Por Grupo de Produto**: Segmentação detalhada
-- **Progresso de Revisão**: % de conclusão por GC
-- **Métricas Financeiras**: Valores em milhões (sem centavos)
+- **Por Status**: Diferentes categorias de dados
+- **Por Categoria**: Distribuição e segmentação
+- **Por Usuário**: Performance individual
+- **Progresso Geral**: Percentual de conclusão
+- **Métricas Personalizadas**: Valores e quantidades
 
 ## 🛠️ **Tecnologias Utilizadas**
 
@@ -57,33 +56,15 @@ O Dashboard Revisão Carteira é uma solução completa para automatizar e acomp
 
 ### Pré-requisitos
 - Python 3.8 ou superior
-- Microsoft Outlook (para geração de e-mails)
-- Git (para versionamento) - [Download aqui](https://git-scm.com/download/win)
+- Aplicativo de e-mail configurado (opcional)
 
-### 1. Clone ou baixe o projeto
+### 1. Clone o projeto
 ```bash
-# Se você tem acesso ao repositório
-git clone https://github.com/seu-usuario/dashboard-revisao-carteira.git
-cd dashboard-revisao-carteira
-
-# Ou baixe e extraia o arquivo ZIP
+git clone https://github.com/usuario/dashboard-revisao-dados.git
+cd dashboard-revisao-dados
 ```
 
-### 2. Crie um ambiente virtual
-```bash
-python -m venv venv
-```
-
-### 3. Ative o ambiente virtual
-```bash
-# Windows
-venv\Scripts\activate
-
-# Linux/Mac
-source venv/bin/activate
-```
-
-### 4. Instale as dependências
+### 2. Instale as dependências
 ```bash
 pip install -r requirements.txt
 ```
@@ -98,104 +79,113 @@ streamlit run app.py
 ### 2. Acesse o dashboard
 Abra seu navegador em: `http://localhost:8501`
 
-### 3. Para Administradores
+### 3. Workflow básico
 
-1. **📁 Upload**: Carregue o arquivo Excel da carteira na sidebar
-2. **🗓️ Período**: Selecione o mês/ano de trabalho
-3. **📊 Análise**: Visualize métricas e aplique filtros
-4. **🔗 Links**: Gere links personalizados para cada GC
-5. **📧 E-mails**: Crie e envie e-mails automáticos
+1. **📁 Upload**: Carregue arquivo Excel com os dados
+2. **🔍 Filtros**: Aplique filtros conforme necessário
+3. **📊 Análise**: Visualize métricas e gráficos
+4. **🔗 Links**: Gere links para usuários específicos
+5. **📧 Notificação**: Envie links via e-mail
+6. **📈 Acompanhamento**: Monitore o progresso
 
 ## ⚙️ **Configurações**
 
-### URL Base
-Para deployment em produção, altere a `base_url` na função `generate_personalized_links()`:
+### URL de Deploy
+Para uso em produção, altere a URL base no código:
 
 ```python
-base_url = "https://sua-aplicacao.streamlit.app"  # Substitua pela URL real
+base_url = "https://sua-aplicacao.streamlit.app"
 ```
 
-### Lógica de Mês de Trabalho
-O sistema segue a regra:
-- **Julho** → trabalha **Agosto**
-- **Agosto** → trabalha **Setembro**
-- **Dezembro** → trabalha **Janeiro** (próximo ano)
+### Personalização
+- Filtros podem ser adaptados conforme necessidade
+- Métricas são configuráveis via código
+- Interface pode ser personalizada com CSS
 
 ## 🔒 **Segurança**
 
-- **Links únicos**: Hash MD5 baseado em GC + mês + ano
-- **Validação temporal**: Links válidos apenas para o período específico
-- **Controle de acesso**: Verificação de hash antes de exibir dados
-- **Session State**: Dados isolados por sessão
+- **Links únicos**: Hash baseado em usuário e período
+- **Validação**: Verificação de acesso antes de exibir dados
+- **Isolamento**: Dados separados por sessão
+- **Temporalidade**: Links válidos apenas para período específico
 
-## 📊 **Métricas Monitoradas**
+## 📊 **Métricas Padrão**
 
-### Principais KPIs
-- **Total de Registros**: Quantidade de pedidos na carteira
-- **Valor Total**: Soma em milhões de reais (sem centavos)
-- **Volume Total**: Quantidade total de produtos
-- **% Revisão**: Percentual de pedidos revisados
-- **% Alterações**: Percentual de datas alteradas
+### KPIs Principais
+- **Total de Registros**: Quantidade total de itens
+- **Valores**: Somas e médias personalizáveis
+- **Progresso**: Percentual de conclusão
+- **Performance**: Análise por usuário/categoria
 
-### Segmentações
-- **Por Status de Crédito**: Distribuição dos pedidos
-- **Por Diretoria**: Análise por área de negócio
-- **Por GC**: Performance individual de revisão
-- **Por Grupo**: Categorização de produtos
+### Visualizações
+- **Gráficos de barras**: Comparações por categoria
+- **Gráficos de pizza**: Distribuições percentuais
+- **Métricas**: Cards com valores principais
+- **Tabelas**: Dados detalhados e editáveis
 
-## 🔄 **Fluxo de Trabalho**
+## 🔄 **Arquitetura**
 
-```mermaid
-graph TD
-    A[Admin carrega Excel] --> B[Sistema filtra por mês]
-    B --> C[Gera links personalizados]
-    C --> D[Cria e-mails automáticos]
-    D --> E[GCs recebem e-mails]
-    E --> F[GCs acessam links]
-    F --> G[GCs fazem revisões]
-    G --> H[Admin acompanha progresso]
-    H --> I[Exporta relatórios]
+```
+Dashboard Principal (Admin)
+    ↓
+Upload de Dados
+    ↓
+Processamento e Filtros
+    ↓
+Geração de Links Personalizados
+    ↓
+Interface de Usuário (Links)
+    ↓
+Coleta de Revisões
+    ↓
+Consolidação e Relatórios
 ```
 
 ## 📁 **Estrutura do Projeto**
 
 ```
-dashboard-revisao-carteira/
+dashboard-revisao-dados/
 ├── app.py                 # Aplicação principal
-├── requirements.txt       # Dependências
-├── README.md             # Documentação
-└── dados/               # Pasta para arquivos de dados
-    └── carteira_exemplo.xlsx
+├── requirements.txt       # Dependências Python
+├── README.md             # Este arquivo
+└── .streamlit/           # Configurações (opcional)
+    └── config.toml
 ```
 
-## ⚙️ **Deployment e Configuração**
+## 🚀 **Deploy**
 
-### Para uso em produção (Streamlit Cloud)
-1. Faça upload dos arquivos para um repositório privado
-2. Configure o Streamlit Cloud apontando para o repositório
-3. Altere a `base_url` no código para a URL de produção
+### Streamlit Cloud
+1. Faça push para um repositório público no GitHub
+2. Conecte com Streamlit Cloud
+3. Configure as variáveis de ambiente necessárias
+4. Deploy automático a cada commit
 
-### Configurações importantes
-- **URL Base**: Ajustar para produção na função `generate_personalized_links()`
-- **Segurança**: Sistema usa hash MD5 para links únicos
-- **Dados**: Session state mantém dados durante a sessão
+### Outras opções
+- **Heroku**: Para maior controle de recursos
+- **Docker**: Para ambientes containerizados
+- **Local**: Para uso interno em rede local
 
-## 📝 **Notas de Versão**
+## 📝 **Contribuição**
 
-### v1.0.0 (Atual)
-- ✅ Sistema completo de revisão de carteira
-- ✅ Links personalizados para GCs
-- ✅ Geração automática de e-mails
-- ✅ Dashboard com métricas em tempo real
-- ✅ Filtros por período usando "Revisão Data Faturamento"
-- ✅ Valores sem centavos para melhor visualização
+Este é um projeto de uso específico, mas contribuições são bem-vindas:
 
-### Próximas melhorias
-- 🔄 Integração com banco de dados
-- 📊 Relatórios automáticos em PDF
-- 🔔 Notificações por WhatsApp
-- 📱 Versão mobile otimizada
+1. Fork o projeto
+2. Crie uma branch para sua feature
+3. Commit suas mudanças
+4. Push para a branch
+5. Abra um Pull Request
+
+## 📄 **Licença**
+
+Este projeto está sob licença MIT. Veja o arquivo `LICENSE` para mais detalhes.
+
+## 🆘 **Suporte**
+
+Para dúvidas ou problemas:
+- Abra uma issue no GitHub
+- Consulte a documentação do Streamlit
+- Verifique os logs da aplicação
 
 ---
 
-💼 **Desenvolvido exclusivamente para uso interno da empresa** 💼
+**Dashboard desenvolvido com Streamlit - Framework Python para aplicações web interativas**
