@@ -179,7 +179,7 @@ def get_resumo_por_grupo(df, gc):
 def generate_personalized_links(df, mes, ano):
     """Gera links personalizados para cada GC"""
     gcs = df['GC'].dropna().unique()
-    base_url = "https://seu-app-streamlit.com"  # Substitua pela URL real
+    base_url = "https://dash-carteira-review.streamlit.app"  # URL real do Streamlit
     mes_nome = calendar.month_name[mes]
     
     links = {}
