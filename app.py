@@ -26,6 +26,12 @@ if 'dados_revisao' not in st.session_state:
 if 'df_original' not in st.session_state:
     st.session_state.df_original = None
 
+if 'data_hash' not in st.session_state:
+    st.session_state.data_hash = None
+
+if 'cached_data' not in st.session_state:
+    st.session_state.cached_data = {}
+
 # Função para determinar o mês de trabalho
 def get_mes_trabalho():
     """Retorna o mês que deve ser trabalhado baseado no mês atual"""
@@ -61,6 +67,28 @@ def generate_gc_hash(gc_name, mes, ano):
     """Gera um hash único para o GC para criar link personalizado"""
     unique_string = f"{gc_name}_{mes}_{ano}"
     return hashlib.md5(unique_string.encode()).hexdigest()[:10]
+
+# Função para gerar hash dos dados
+def generate_data_hash(df):
+    """Gera hash dos dados para identificação única"""
+    # Usar as primeiras linhas e colunas para gerar um hash único
+    sample_data = str(df.head(10).to_dict()) + str(df.columns.tolist())
+    return hashlib.md5(sample_data.encode()).hexdigest()[:16]
+
+# Função para salvar dados no cache global
+def save_data_to_cache(df, data_hash):
+    """Salva dados no cache global do Streamlit"""
+    if 'global_data_cache' not in st.session_state:
+        st.session_state.global_data_cache = {}
+    
+    st.session_state.global_data_cache[data_hash] = df.copy()
+
+# Função para recuperar dados do cache
+def get_data_from_cache(data_hash):
+    """Recupera dados do cache global"""
+    if 'global_data_cache' in st.session_state:
+        return st.session_state.global_data_cache.get(data_hash, None)
+    return None
 
 # Função para carregar dados
 @st.cache_data
@@ -182,6 +210,12 @@ def generate_personalized_links(df, mes, ano):
     base_url = "https://dash-carteira-review.streamlit.app"  # URL real do Streamlit
     mes_nome = calendar.month_name[mes]
     
+    # Gerar hash dos dados para incluir no link
+    data_hash = generate_data_hash(df)
+    
+    # Salvar dados no cache
+    save_data_to_cache(df, data_hash)
+    
     links = {}
     for gc in gcs:
         gc_hash = generate_gc_hash(gc, mes, ano)
@@ -195,10 +229,12 @@ def generate_personalized_links(df, mes, ano):
         # Resumo por grupo
         resumo_grupos = get_resumo_por_grupo(df, gc)
         
-        link = f"{base_url}?gc={urllib.parse.quote(gc)}&hash={gc_hash}&mes={mes}&ano={ano}"
+        # Incluir hash dos dados no link
+        link = f"{base_url}?gc={urllib.parse.quote(gc)}&hash={gc_hash}&mes={mes}&ano={ano}&data={data_hash}"
         links[gc] = {
             'link': link,
             'hash': gc_hash,
+            'data_hash': data_hash,
             'pedidos': pedidos_gc,
             'valor': valor_gc,
             'volume': volume_gc,
@@ -454,6 +490,7 @@ def main():
     hash_from_url = query_params.get("hash", None)
     mes_from_url = int(query_params.get("mes", 0)) if query_params.get("mes") else None
     ano_from_url = int(query_params.get("ano", 0)) if query_params.get("ano") else None
+    data_hash_from_url = query_params.get("data", None)
     
     if gc_from_url and hash_from_url and mes_from_url and ano_from_url:
         # Modo formulário para GC específico
@@ -461,9 +498,46 @@ def main():
         st.title(f"📋 Revisão de Carteira - {gc_from_url}")
         st.caption(f"Período: {mes_nome}/{ano_from_url}")
         
-        # Verificar se há dados carregados
-        if st.session_state.df_original is None:
+        # Tentar recuperar dados do cache primeiro
+        df_original = None
+        
+        if data_hash_from_url:
+            df_original = get_data_from_cache(data_hash_from_url)
+        
+        # Se não encontrou no cache, tentar session_state
+        if df_original is None:
+            df_original = st.session_state.df_original
+        
+        if df_original is None:
             st.error("⚠️ Dados não encontrados. Entre em contato com o administrador.")
+            
+            with st.expander("� Instruções para Resolver", expanded=True):
+                st.markdown("""
+                **Como resolver este problema:**
+                
+                1. **Abra o dashboard principal** em uma nova aba
+                2. **Faça upload** do arquivo Excel da carteira
+                3. **Gere os links** novamente na seção "Links Personalizados"
+                4. **Use o novo link** gerado
+                
+                **Por que isso acontece?**
+                - Os dados não persistem entre sessões diferentes
+                - Cada link do GC precisa que os dados tenham sido carregados primeiro
+                
+                **Solução definitiva:**
+                - O administrador deve carregar os dados no dashboard principal
+                - Depois disso, os links funcionarão por algumas horas
+                """)
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("🏠 Ir para Dashboard Principal", type="primary"):
+                    st.markdown(f"🔗 [Clique aqui para ir ao Dashboard](https://dash-carteira-review.streamlit.app)")
+            
+            with col2:
+                if st.button("🔄 Tentar Novamente"):
+                    st.rerun()
+            
             st.stop()
         
         # Verificar hash de segurança
@@ -473,7 +547,7 @@ def main():
             st.stop()
         
         # Filtrar por mês de trabalho e aplicar revisões
-        df_mes = filtrar_por_mes_trabalho(st.session_state.df_original, mes_from_url, ano_from_url)
+        df_mes = filtrar_por_mes_trabalho(df_original, mes_from_url, ano_from_url)
         df_with_revisoes = apply_revisoes_to_dataframe(df_mes)
         formulario_revisao_gc(df_with_revisoes, gc_from_url, mes_from_url, ano_from_url)
         
@@ -522,6 +596,11 @@ def main():
                     # Salvar no session state
                     st.session_state.df_original = df
                     
+                    # Gerar e salvar hash dos dados
+                    data_hash = generate_data_hash(df)
+                    st.session_state.data_hash = data_hash
+                    save_data_to_cache(df, data_hash)
+                    
                     # Filtrar por mês de trabalho
                     df_mes = filtrar_por_mes_trabalho(df, mes_selecionado, ano_selecionado)
                     
@@ -531,6 +610,7 @@ def main():
                     st.success(f"✅ Arquivo carregado")
                     st.info(f"📊 {len(df):,} registros totais")
                     st.info(f"📅 {len(df_mes):,} registros para {calendar.month_name[mes_selecionado]}/{ano_selecionado}")
+                    st.success(f"🔗 Links personalizados prontos! (Hash: {data_hash[:8]}...)")
                     
                     # Botões para gerenciar revisões
                     col1, col2, col3 = st.columns(3)
