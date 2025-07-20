@@ -238,14 +238,24 @@ def apply_revisoes_to_dataframe(df):
     
     df_updated = df.copy()
     
-    for ordem, revisao_data in st.session_state.dados_revisao.items():
-        mask = df_updated['Ord.venda'] == ordem
+    for revisao_key, revisao_data in st.session_state.dados_revisao.items():
+        # Verificar se é o formato novo (ordem_material) ou antigo (só ordem)
+        if '_' in revisao_key and 'ordem' in revisao_data and 'material' in revisao_data:
+            # Formato novo: usar ordem + material
+            ordem = revisao_data['ordem']
+            material = revisao_data['material']
+            mask = (df_updated['Ord.venda'] == ordem) & (df_updated['Material'] == material)
+        else:
+            # Formato antigo: compatibilidade (só ordem)
+            ordem = revisao_key if isinstance(revisao_key, (int, str)) else revisao_data.get('ordem', revisao_key)
+            mask = df_updated['Ord.venda'] == ordem
+        
         if mask.any():
             df_updated.loc[mask, 'Revisao_Realizada'] = True
             df_updated.loc[mask, 'Data_Revisao'] = pd.to_datetime(revisao_data['data_revisao'])
             df_updated.loc[mask, 'Revisado_Por'] = revisao_data['gc']
             
-            if revisao_data['nova_data']:
+            if revisao_data.get('nova_data'):
                 df_updated.loc[mask, 'Data_Original_Alterada'] = True
                 df_updated.loc[mask, 'Nova_Data_Entrega'] = pd.to_datetime(revisao_data['nova_data'])
     
@@ -483,6 +493,9 @@ def formulario_revisao_gc(df, gc_selecionado, mes, ano):
     # Processar cada pedido
     for idx, row in df_filtered.iterrows():
         ordem = row['Ord.venda']
+        material = row['Material'] if 'Material' in row and pd.notna(row['Material']) else 'sem_material'
+        # Criar ID único combinando ordem + material para itens múltiplos da mesma ordem
+        unique_id = f"{ordem}_{material}_{idx}"
         
         with st.container():
             col1, col2, col3 = st.columns([2, 2, 1])
@@ -514,9 +527,13 @@ def formulario_revisao_gc(df, gc_selecionado, mes, ano):
                 col_check, col_rev = st.columns(2)
                 
                 with col_check:
-                    if st.button("✅ OK", key=f"check_{ordem}", help="Data está correta"):
-                        st.session_state.dados_revisao[ordem] = {
+                    if st.button("✅ OK", key=f"check_{unique_id}", help="Data está correta"):
+                        # Usar chave única ordem + material para salvar revisão
+                        revisao_key = f"{ordem}_{material}"
+                        st.session_state.dados_revisao[revisao_key] = {
                             'gc': gc_selecionado,
+                            'ordem': ordem,
+                            'material': material,
                             'data_revisao': datetime.now().isoformat(),
                             'nova_data': None,
                             'acao': 'check'
@@ -524,13 +541,13 @@ def formulario_revisao_gc(df, gc_selecionado, mes, ano):
                         st.rerun()
                 
                 with col_rev:
-                    if st.button("📅 Revisar", key=f"rev_{ordem}", help="Alterar data"):
-                        st.session_state[f'revisar_{ordem}'] = True
+                    if st.button("📅 Revisar", key=f"rev_{unique_id}", help="Alterar data"):
+                        st.session_state[f'revisar_{unique_id}'] = True
                         st.rerun()
         
         # Formulário para alterar data (aparece quando clica em Revisar)
-        if st.session_state.get(f'revisar_{ordem}', False):
-            with st.form(f"form_data_{ordem}"):
+        if st.session_state.get(f'revisar_{unique_id}', False):
+            with st.form(f"form_data_{unique_id}"):
                 st.write("**Alterar Data de Entrega:**")
                 col1, col2 = st.columns(2)
                 
@@ -538,32 +555,36 @@ def formulario_revisao_gc(df, gc_selecionado, mes, ano):
                     nova_data = st.date_input(
                         "Nova Data de Entrega",
                         value=row['Data_Trabalho'].date() if pd.notna(row['Data_Trabalho']) else date.today(),
-                        key=f"data_{ordem}"
+                        key=f"data_{unique_id}"
                     )
                 
                 with col2:
                     justificativa = st.text_input(
                         "Justificativa (opcional)",
-                        key=f"just_{ordem}"
+                        key=f"just_{unique_id}"
                     )
                 
                 col_save, col_cancel = st.columns(2)
                 with col_save:
                     if st.form_submit_button("💾 Salvar"):
-                        st.session_state.dados_revisao[ordem] = {
+                        # Usar chave única ordem + material para salvar revisão
+                        revisao_key = f"{ordem}_{material}"
+                        st.session_state.dados_revisao[revisao_key] = {
                             'gc': gc_selecionado,
+                            'ordem': ordem,
+                            'material': material,
                             'data_revisao': datetime.now().isoformat(),
                             'nova_data': nova_data.isoformat(),
                             'justificativa': justificativa,
                             'acao': 'revisao'
                         }
-                        st.session_state[f'revisar_{ordem}'] = False
+                        st.session_state[f'revisar_{unique_id}'] = False
                         st.success("Data alterada com sucesso!")
                         st.rerun()
                 
                 with col_cancel:
                     if st.form_submit_button("❌ Cancelar"):
-                        st.session_state[f'revisar_{ordem}'] = False
+                        st.session_state[f'revisar_{unique_id}'] = False
                         st.rerun()
         
         st.markdown("---")
@@ -1164,20 +1185,39 @@ def main():
                 st.header("📋 Resumo das Revisões Realizadas")
                 
                 revisoes_df = []
-                for ordem, dados in st.session_state.dados_revisao.items():
-                    # Buscar informações da ordem no dataframe
-                    ordem_info = df[df['Ord.venda'] == ordem]
-                    cliente = ordem_info['Nome Emissor'].iloc[0] if not ordem_info.empty else 'N/A'
-                    grupo = ordem_info['Grupo'].iloc[0] if not ordem_info.empty else 'N/A'
+                for revisao_key, dados in st.session_state.dados_revisao.items():
+                    # Determinar ordem e material baseado no formato da chave
+                    if '_' in revisao_key and 'ordem' in dados and 'material' in dados:
+                        # Formato novo: ordem_material
+                        ordem = dados['ordem']
+                        material = dados['material']
+                        ordem_info = df[(df['Ord.venda'] == ordem) & (df['Material'] == material)]
+                    else:
+                        # Formato antigo: só ordem (compatibilidade)
+                        ordem = revisao_key if isinstance(revisao_key, (int, str)) else dados.get('ordem', revisao_key)
+                        material = 'N/A'
+                        ordem_info = df[df['Ord.venda'] == ordem]
+                    
+                    # Buscar informações da ordem/material no dataframe
+                    if not ordem_info.empty:
+                        cliente = ordem_info['Nome Emissor'].iloc[0]
+                        grupo = ordem_info['Grupo'].iloc[0]
+                        produto = ordem_info['Desc. Material'].iloc[0]
+                    else:
+                        cliente = 'N/A'
+                        grupo = 'N/A'
+                        produto = 'N/A'
                     
                     revisoes_df.append({
                         'Ordem': ordem,
+                        'Material': material if material != 'sem_material' else 'N/A',
                         'GC': dados['gc'],
                         'Cliente': cliente,
+                        'Produto': produto,
                         'Grupo': grupo,
                         'Data_Revisao': pd.to_datetime(dados['data_revisao']).strftime('%d/%m/%Y %H:%M'),
-                        'Acao': 'Data Alterada' if dados['nova_data'] else 'Confirmado',
-                        'Nova_Data': pd.to_datetime(dados['nova_data']).strftime('%d/%m/%Y') if dados['nova_data'] else '-',
+                        'Acao': 'Data Alterada' if dados.get('nova_data') else 'Confirmado',
+                        'Nova_Data': pd.to_datetime(dados['nova_data']).strftime('%d/%m/%Y') if dados.get('nova_data') else '-',
                         'Justificativa': dados.get('justificativa', '-')
                     })
                 
