@@ -588,6 +588,157 @@ def formulario_revisao_gc(df, gc_selecionado, mes, ano):
                         st.rerun()
         
         st.markdown("---")
+    
+    # Seção de finalização e envio para o GC
+    st.header("🎯 Finalizar Revisão")
+    
+    # Calcular estatísticas de conclusão
+    total_pedidos_gc = len(df_gc)
+    revisados = df_gc['Revisao_Realizada'].sum()
+    perc_conclusao = (revisados / total_pedidos_gc * 100) if total_pedidos_gc > 0 else 0
+    
+    # Verificar se tem revisões feitas nesta sessão
+    revisoes_gc = {k: v for k, v in st.session_state.dados_revisao.items() 
+                   if v.get('gc') == gc_selecionado}
+    
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        st.subheader("📊 Status da sua Revisão")
+        
+        progress_bar = st.progress(perc_conclusao / 100)
+        st.write(f"**Progresso:** {revisados}/{total_pedidos_gc} pedidos revisados ({perc_conclusao:.1f}%)")
+        
+        if revisoes_gc:
+            st.success(f"✅ Você fez {len(revisoes_gc)} revisões nesta sessão!")
+        else:
+            st.info("ℹ️ Nenhuma revisão feita nesta sessão ainda.")
+    
+    with col2:
+        st.subheader("📤 Enviar Revisões")
+        
+        # Seção para e-mail de notificação
+        email_admin = st.text_input(
+            "📧 E-mail do Administrador:",
+            placeholder="admin@empresa.com",
+            help="E-mail para receber notificação de conclusão",
+            key="email_admin_notif"
+        )
+        
+        if revisoes_gc:
+            # Gerar nome do arquivo
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M')
+            nome_arquivo = f"revisoes_{gc_selecionado.replace(' ', '_')}_{mes_nome}_{ano}_{timestamp}.json"
+            
+            # Preparar dados das revisões para download
+            dados_envio = {
+                'gc': gc_selecionado,
+                'mes': mes,
+                'ano': ano,
+                'mes_nome': mes_nome,
+                'timestamp': datetime.now().isoformat(),
+                'total_pedidos': total_pedidos_gc,
+                'total_revisados': len(revisoes_gc),
+                'revisoes': revisoes_gc
+            }
+            
+            revisoes_json = json.dumps(dados_envio, indent=2, default=str, ensure_ascii=False)
+            
+            # Botão de download das revisões
+            st.download_button(
+                "📤 Baixar Minhas Revisões",
+                data=revisoes_json,
+                file_name=nome_arquivo,
+                mime="application/json",
+                help="Baixa suas revisões para enviar ao administrador",
+                type="primary"
+            )
+            
+            # Botão para gerar e-mail de notificação
+            if email_admin:
+                if st.button("📧 Enviar E-mail de Conclusão", help="Abre e-mail para notificar o administrador"):
+                    assunto, corpo = gerar_email_conclusao_gc(
+                        gc_selecionado, len(revisoes_gc), total_pedidos_gc, 
+                        mes, ano, nome_arquivo
+                    )
+                    
+                    sucesso = abrir_outlook_com_email(email_admin, assunto, corpo)
+                    if sucesso:
+                        st.success("✅ E-mail de notificação aberto no Outlook!")
+                        st.info("💡 **Lembre-se:** Anexe o arquivo JSON baixado no e-mail antes de enviar!")
+                    else:
+                        st.error("❌ Erro ao abrir Outlook.")
+        else:
+            st.warning("⚠️ Faça pelo menos uma revisão antes de enviar!")
+    
+    # Instruções para o GC
+    with st.expander("📋 Como Finalizar sua Revisão", expanded=False):
+        st.markdown(f"""
+        ### 🎯 Passos para Concluir:
+        
+        **1. ✅ Revise todos os pedidos**
+        - Para cada pedido, clique em "✅ OK" se a data está correta
+        - Ou clique em "📅 Revisar" para alterar a data
+        
+        **2. 📤 Baixe suas revisões**
+        - Clique em "📤 Baixar Minhas Revisões"
+        - Salve o arquivo no seu computador
+        
+        **3. 📧 Notifique o administrador**
+        - Informe o e-mail do administrador
+        - Clique em "📧 Enviar E-mail de Conclusão"
+        - **IMPORTANTE:** Anexe o arquivo JSON no e-mail!
+        
+        **4. 🎉 Pronto!**
+        - Suas revisões serão consolidadas no dashboard principal
+        - Você receberá confirmação quando tudo estiver processado
+        
+        ---
+        
+        **❓ Dúvidas?**
+        - ✅ Suas revisões são salvas automaticamente enquanto você trabalha
+        - ✅ Você pode fechar e voltar ao link a qualquer momento
+        - ✅ O arquivo JSON contém todas as suas decisões de forma segura
+        """)
+    
+    st.markdown("---")
+
+# Função para gerar e-mail de notificação de conclusão
+def gerar_email_conclusao_gc(gc, total_revisados, total_pedidos, mes, ano, arquivo_revisoes):
+    """Gera e-mail de notificação quando GC termina revisão"""
+    mes_nome = calendar.month_name[mes]
+    perc_revisao = (total_revisados / total_pedidos * 100) if total_pedidos > 0 else 0
+    
+    assunto = f"✅ Revisão Concluída - {gc} - {mes_nome}/{ano}"
+    
+    corpo_email = f"""
+Olá,
+
+O GC {gc} concluiu a revisão da carteira de {mes_nome}/{ano}.
+
+📊 RESUMO DA REVISÃO:
+═══════════════════════════════════════════
+👤 GC: {gc}
+📅 Período: {mes_nome}/{ano}
+📋 Total de Pedidos: {total_pedidos}
+✅ Pedidos Revisados: {total_revisados}
+📈 % Conclusão: {perc_revisao:.1f}%
+🕐 Data/Hora: {datetime.now().strftime('%d/%m/%Y às %H:%M')}
+
+📎 ARQUIVO DE REVISÕES:
+Arquivo anexo: {arquivo_revisoes}
+
+🔄 PRÓXIMOS PASSOS:
+1. Baixar o arquivo anexo
+2. Importar no dashboard principal
+3. Consolidar com outras revisões
+4. Gerar relatório final
+
+Att,
+Sistema de Revisão de Carteira
+    """
+    
+    return assunto, corpo_email
 
 # Interface principal
 def main():
@@ -799,6 +950,123 @@ def main():
                                 st.rerun()
                             except Exception as e:
                                 st.error(f"❌ Erro ao carregar: {str(e)}")
+                    
+                    # Seção para consolidar revisões dos GCs
+                    st.header("📥 Consolidar Revisões dos GCs")
+                    
+                    col1, col2 = st.columns([2, 1])
+                    
+                    with col1:
+                        # Upload múltiplo de arquivos de revisão
+                        arquivos_revisoes = st.file_uploader(
+                            "📂 Carregar Revisões dos GCs",
+                            type=['json'],
+                            accept_multiple_files=True,
+                            help="Selecione os arquivos JSON enviados pelos GCs",
+                            key="upload_revisoes_gcs"
+                        )
+                        
+                        if arquivos_revisoes:
+                            st.write(f"**📁 {len(arquivos_revisoes)} arquivo(s) selecionado(s):**")
+                            
+                            dados_consolidados = {}
+                            info_gcs = []
+                            
+                            for arquivo in arquivos_revisoes:
+                                try:
+                                    dados_gc = json.load(arquivo)
+                                    gc_nome = dados_gc.get('gc', 'GC Desconhecido')
+                                    total_revisoes = dados_gc.get('total_revisados', 0)
+                                    timestamp = dados_gc.get('timestamp', 'N/A')
+                                    
+                                    # Consolidar revisões
+                                    revisoes_gc = dados_gc.get('revisoes', {})
+                                    dados_consolidados.update(revisoes_gc)
+                                    
+                                    # Informações para exibir
+                                    info_gcs.append({
+                                        'Arquivo': arquivo.name,
+                                        'GC': gc_nome,
+                                        'Revisões': total_revisoes,
+                                        'Data/Hora': pd.to_datetime(timestamp).strftime('%d/%m/%Y %H:%M') if timestamp != 'N/A' else 'N/A'
+                                    })
+                                    
+                                except Exception as e:
+                                    st.error(f"❌ Erro ao processar {arquivo.name}: {str(e)}")
+                            
+                            if info_gcs:
+                                # Mostrar resumo dos arquivos
+                                df_info = pd.DataFrame(info_gcs)
+                                st.dataframe(df_info, use_container_width=True, hide_index=True)
+                                
+                                total_revisoes_consolidadas = sum([info['Revisões'] for info in info_gcs])
+                                st.success(f"✅ **Total consolidado:** {total_revisoes_consolidadas} revisões de {len(info_gcs)} GC(s)")
+                    
+                    with col2:
+                        if arquivos_revisoes and dados_consolidados:
+                            st.subheader("🔄 Ações")
+                            
+                            # Botão para aplicar todas as revisões
+                            if st.button("🔄 Consolidar Todas", type="primary", help="Aplica todas as revisões ao sistema"):
+                                # Atualizar session_state com as revisões consolidadas
+                                st.session_state.dados_revisao.update(dados_consolidados)
+                                st.success(f"✅ {len(dados_consolidados)} revisões consolidadas!")
+                                st.balloons()
+                                st.rerun()
+                            
+                            # Botão para baixar consolidado
+                            if st.button("💾 Baixar Consolidado", help="Baixa arquivo consolidado de todas as revisões"):
+                                timestamp = datetime.now().strftime('%Y%m%d_%H%M')
+                                consolidado = {
+                                    'consolidacao_timestamp': datetime.now().isoformat(),
+                                    'total_gcs': len(info_gcs),
+                                    'total_revisoes': len(dados_consolidados),
+                                    'gcs_participantes': [info['GC'] for info in info_gcs],
+                                    'revisoes': dados_consolidados
+                                }
+                                
+                                json_consolidado = json.dumps(consolidado, indent=2, default=str, ensure_ascii=False)
+                                
+                                st.download_button(
+                                    "📥 Download Consolidado",
+                                    data=json_consolidado,
+                                    file_name=f"revisoes_consolidadas_{mes_selecionado}_{ano_selecionado}_{timestamp}.json",
+                                    mime="application/json"
+                                )
+                        else:
+                            st.info("👆 Carregue arquivos de revisão para ver as opções de consolidação")
+                    
+                    # Instruções para consolidação
+                    with st.expander("📋 Como Consolidar Revisões dos GCs", expanded=False):
+                        st.markdown("""
+                        ### 🎯 Processo de Consolidação:
+                        
+                        **1. 📧 Receba os e-mails dos GCs**
+                        - Cada GC enviará um e-mail com o arquivo JSON anexo
+                        - Salve todos os arquivos em uma pasta
+                        
+                        **2. 📂 Carregue os arquivos**
+                        - Use "Carregar Revisões dos GCs"
+                        - Selecione múltiplos arquivos de uma vez
+                        - O sistema mostrará um resumo de cada GC
+                        
+                        **3. 🔄 Consolide tudo**
+                        - Clique em "Consolidar Todas"
+                        - Todas as revisões serão aplicadas ao dashboard
+                        - As métricas serão atualizadas automaticamente
+                        
+                        **4. 💾 Salve o resultado**
+                        - Use "Baixar Consolidado" para ter um backup
+                        - Exporte as métricas finais
+                        
+                        ---
+                        
+                        **✅ Vantagens:**
+                        - ✅ Cada GC trabalha independentemente
+                        - ✅ Consolidação centralizada e controlada
+                        - ✅ Rastreabilidade completa
+                        - ✅ Backup automático de todas as etapas
+                        """)
                     
                     # Alerta sobre persistência
                     st.warning("⚠️ **IMPORTANTE**: As revisões não persistem entre sessões. Use 'Salvar Revisões' regularmente!")
@@ -1034,6 +1302,66 @@ def main():
             
             # Seção de links personalizados e e-mails
             st.header("📧 Geração de E-mails e Links Personalizados")
+            
+            # Status de conclusão por GC
+            st.subheader("📊 Status de Conclusão por GC")
+            
+            # Calcular estatísticas de cada GC
+            status_gcs = []
+            for gc in df['GC'].dropna().unique():
+                df_gc = df[df['GC'] == gc]
+                total_gc = len(df_gc)
+                revisados_gc = df_gc['Revisao_Realizada'].sum()
+                perc_gc = (revisados_gc / total_gc * 100) if total_gc > 0 else 0
+                
+                # Verificar se GC tem revisões na sessão atual
+                revisoes_sessao = len([k for k, v in st.session_state.dados_revisao.items() 
+                                     if v.get('gc') == gc])
+                
+                status = "🟢 Completo" if perc_gc >= 100 else "🟡 Em Andamento" if perc_gc > 0 else "🔴 Pendente"
+                
+                status_gcs.append({
+                    'GC': gc,
+                    'Status': status,
+                    'Revisados': f"{revisados_gc}/{total_gc}",
+                    'Progresso': f"{perc_gc:.1f}%",
+                    'Revisões Sessão': revisoes_sessao
+                })
+            
+            df_status = pd.DataFrame(status_gcs)
+            
+            # Mostrar em colunas para melhor visualização
+            col1, col2 = st.columns([2, 1])
+            
+            with col1:
+                st.dataframe(
+                    df_status,
+                    column_config={
+                        "Status": st.column_config.TextColumn("Status"),
+                        "Progresso": st.column_config.ProgressColumn(
+                            "% Progresso",
+                            help="Percentual de pedidos revisados",
+                            min_value=0,
+                            max_value=100
+                        )
+                    },
+                    use_container_width=True,
+                    hide_index=True
+                )
+            
+            with col2:
+                # Resumo geral
+                total_gcs = len(status_gcs)
+                completos = len([s for s in status_gcs if s['Status'] == '🟢 Completo'])
+                em_andamento = len([s for s in status_gcs if s['Status'] == '🟡 Em Andamento'])
+                pendentes = len([s for s in status_gcs if s['Status'] == '🔴 Pendente'])
+                
+                st.metric("Total GCs", total_gcs)
+                st.metric("✅ Completos", completos)
+                st.metric("🟡 Em Andamento", em_andamento)
+                st.metric("🔴 Pendentes", pendentes)
+            
+            st.markdown("---")
             
             links_gc = generate_personalized_links(df, mes_selecionado, ano_selecionado)
             
