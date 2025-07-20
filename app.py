@@ -240,6 +240,14 @@ def apply_revisoes_to_dataframe(df):
     df_updated = df.copy()
     
     for revisao_key, revisao_data in st.session_state.dados_revisao.items():
+        # Verificar se revisao_data é um dicionário válido
+        if not isinstance(revisao_data, dict):
+            continue
+            
+        # Verificar se tem dados essenciais
+        if 'gc' not in revisao_data or 'data_revisao' not in revisao_data:
+            continue
+            
         # Verificar se é o formato novo (ordem_material) ou antigo (só ordem)
         if '_' in revisao_key and 'ordem' in revisao_data and 'material' in revisao_data:
             # Formato novo: usar ordem + material
@@ -253,12 +261,24 @@ def apply_revisoes_to_dataframe(df):
         
         if mask.any():
             df_updated.loc[mask, 'Revisao_Realizada'] = True
-            df_updated.loc[mask, 'Data_Revisao'] = pd.to_datetime(revisao_data['data_revisao'])
-            df_updated.loc[mask, 'Revisado_Por'] = revisao_data['gc']
+            
+            # Verificar se data_revisao existe antes de usar
+            if 'data_revisao' in revisao_data:
+                try:
+                    df_updated.loc[mask, 'Data_Revisao'] = pd.to_datetime(revisao_data['data_revisao'])
+                except:
+                    pass  # Se não conseguir converter a data, ignore
+            
+            # Verificar se gc existe antes de usar
+            if 'gc' in revisao_data:
+                df_updated.loc[mask, 'Revisado_Por'] = revisao_data['gc']
             
             if revisao_data.get('nova_data'):
                 df_updated.loc[mask, 'Data_Original_Alterada'] = True
-                df_updated.loc[mask, 'Nova_Data_Entrega'] = pd.to_datetime(revisao_data['nova_data'])
+                try:
+                    df_updated.loc[mask, 'Nova_Data_Entrega'] = pd.to_datetime(revisao_data['nova_data'])
+                except:
+                    pass  # Se não conseguir converter a data, ignore
     
     return df_updated
 
@@ -347,30 +367,31 @@ def gerar_email_outlook(gc, info_gc, mes, ano):
     """Gera estrutura de e-mail para um GC específico"""
     mes_nome = calendar.month_name[mes]
     
+    # Extrair primeiro nome para personalização
+    primeiro_nome = gc.split()[0] if gc else gc
+    
     # Montar resumo por grupos
     grupos_texto = ""
     for _, grupo in info_gc['grupos'].iterrows():
-        grupos_texto += f"""
-        📦 {grupo['Grupo']}:
+        grupos_texto += f"""        📦 {grupo['Grupo']}:
            • Pedidos: {grupo['Qtd_Pedidos']}
            • Valor: R$ {grupo['Valor_MM']:.0f} milhões
-           • Volume: {grupo['Volume_Total']:,.0f}
         """
     
     # Corpo do e-mail
-    corpo_email = f"""
-Olá {gc},
+    corpo_email = f"""Olá {primeiro_nome},
 
-Chegou o momento da revisão da carteira para {mes_nome}/{ano}!
+Vamos revisar a sua carteira para {mes_nome}/{ano}!
+Com isso, vamos garantir que a gente inicie o próximo mês mais redondos com a carteira que será faturada, evitando cancelamento de pedidos.
 
 📊 RESUMO DA SUA CARTEIRA:
 ═══════════════════════════════════════════
 📈 Total de Pedidos: {info_gc['pedidos']}
 💰 Valor Total: R$ {info_gc['valor']:.0f} milhões
-📦 Volume Total: {info_gc['volume']:,.0f}
 
 📋 DETALHAMENTO POR GRUPO:
-═══════════════════════════════════════════{grupos_texto}
+═══════════════════════════════════════════
+{grupos_texto}
 
 🔗 LINK PARA REVISÃO:
 {info_gc['link']}
@@ -380,23 +401,92 @@ Chegou o momento da revisão da carteira para {mes_nome}/{ano}!
 2. Para cada pedido, você pode:
    ✅ Confirmar - se a data está correta
    📅 Revisar - se precisa alterar a data
-3. Suas alterações são salvas automaticamente
+3. No final, baixe o arquivo JSON e responda anexando ele para mim no e-mail ou me envie no Teams. O arquivo JSON é o protocolo da revisão da sua carteira, através dele conseguiremos com o time ADV atualizar as datas corretamente no SAP.
 
-⏰ PRAZO: Até {datetime.now() + timedelta(days=7):%d/%m/%Y}
+⏰ PRAZO: Até {get_ultimo_dia_mes()}/{mes:02d}/{ano}
 
 Em caso de dúvidas, entre em contato comigo.
 
 Att,
-Equipe Comercial
-    """
+Otávio Monteiro"""
     
     assunto = f"Revisão Carteira {mes_nome}/{ano} - {gc} - {info_gc['pedidos']} pedidos"
     
     return assunto, corpo_email
 
+# Função auxiliar para obter último dia do mês
+def get_ultimo_dia_mes():
+    """Retorna último dia do mês atual"""
+    from calendar import monthrange
+    hoje = datetime.now()
+    _, ultimo_dia = monthrange(hoje.year, hoje.month)
+    return ultimo_dia
+
+# Função para resolver nome no Outlook
+def resolver_nome_outlook(outlook, nome):
+    """Tentar resolver nome no Outlook"""
+    try:
+        recipient = outlook.Session.CreateRecipient(nome)
+        recipient.Resolve()
+        if recipient.Resolved:
+            return recipient.Address
+        else:
+            print(f"Aviso: Não foi possível resolver o nome '{nome}' no Outlook")
+            return nome
+    except:
+        print(f"Erro ao resolver nome '{nome}' no Outlook")
+        return nome
+
+# Função para extrair primeiro nome
+def extrair_primeiro_nome(nome_completo):
+    """Extrair apenas o primeiro nome para deixar o email mais natural"""
+    try:
+        if pd.isna(nome_completo) or not nome_completo:
+            return nome_completo
+        # Pegar apenas a primeira palavra (primeiro nome)
+        primeiro_nome = str(nome_completo).strip().split()[0]
+        return primeiro_nome
+    except:
+        return nome_completo
+
 # Função para abrir Outlook com e-mail
 def abrir_outlook_com_email(destinatario, assunto, corpo):
-    """Abre o Outlook com o e-mail pré-preenchido"""
+    """Abre o Outlook com o e-mail pré-preenchido usando COM do Outlook"""
+    try:
+        # Tentar usar COM do Outlook primeiro (mais confiável)
+        try:
+            import win32com.client as win32
+            outlook = win32.Dispatch('outlook.application')
+            
+            # Criar novo e-mail
+            mail = outlook.CreateItem(0)  # 0 = olMailItem
+            
+            # Resolver nome do destinatário
+            destinatario_resolvido = resolver_nome_outlook(outlook, destinatario)
+            
+            mail.To = destinatario_resolvido
+            mail.Subject = assunto
+            mail.Body = corpo
+            
+            # Exibir o e-mail (não enviar automaticamente)
+            mail.Display(True)
+            
+            return True
+            
+        except ImportError:
+            # Se não tem win32com, usar método mailto
+            return abrir_outlook_mailto(destinatario, assunto, corpo)
+        except Exception as e:
+            print(f"Erro no COM do Outlook: {e}")
+            # Fallback para mailto
+            return abrir_outlook_mailto(destinatario, assunto, corpo)
+            
+    except Exception as e:
+        print(f"❌ Erro ao abrir Outlook: {e}")
+        return False
+
+def abrir_outlook_mailto(destinatario, assunto, corpo):
+    """Método de fallback usando mailto URL"""
     try:
         # Codificar para URL
         assunto_encoded = urllib.parse.quote(assunto)
