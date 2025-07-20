@@ -10,6 +10,9 @@ import urllib.parse
 import calendar
 import subprocess
 import platform
+import pickle
+import os
+from pathlib import Path
 
 # Configuração da página
 st.set_page_config(
@@ -74,6 +77,89 @@ def generate_data_hash(df):
     # Usar as primeiras linhas e colunas para gerar um hash único
     sample_data = str(df.head(10).to_dict()) + str(df.columns.tolist())
     return hashlib.md5(sample_data.encode()).hexdigest()[:16]
+
+# Funções para cache persistente em arquivo
+def get_cache_file_path():
+    """Retorna o caminho do arquivo de cache"""
+    return Path("/tmp/carteira_cache.pkl") if os.name != 'nt' else Path("carteira_cache.pkl")
+
+def save_data_to_persistent_cache(df, data_hash):
+    """Salva dados em cache persistente (arquivo)"""
+    try:
+        cache_data = {
+            'data_hash': data_hash,
+            'dataframe': df,
+            'timestamp': datetime.now(),
+            'expires_at': datetime.now() + timedelta(days=30)  # Cache dura 30 dias
+        }
+        
+        cache_file = get_cache_file_path()
+        with open(cache_file, 'wb') as f:
+            pickle.dump(cache_data, f)
+        
+        # Também salvar no session_state como backup
+        if 'global_data_cache' not in st.session_state:
+            st.session_state.global_data_cache = {}
+        st.session_state.global_data_cache[data_hash] = df.copy()
+        
+        return True
+    except Exception as e:
+        st.error(f"Erro ao salvar cache: {str(e)}")
+        return False
+
+def load_data_from_persistent_cache(data_hash=None):
+    """Carrega dados do cache persistente"""
+    try:
+        cache_file = get_cache_file_path()
+        if not cache_file.exists():
+            return None
+        
+        with open(cache_file, 'rb') as f:
+            cache_data = pickle.load(f)
+        
+        # Verificar se não expirou
+        if datetime.now() > cache_data['expires_at']:
+            cache_file.unlink()  # Remove arquivo expirado
+            return None
+        
+        # Se hash específico fornecido, verificar se bate
+        if data_hash and cache_data['data_hash'] != data_hash:
+            return None
+        
+        # Retornar dados
+        df = cache_data['dataframe']
+        
+        # Salvar também no session_state
+        st.session_state.df_original = df
+        if 'global_data_cache' not in st.session_state:
+            st.session_state.global_data_cache = {}
+        st.session_state.global_data_cache[cache_data['data_hash']] = df.copy()
+        
+        return df, cache_data['data_hash'], cache_data['timestamp']
+        
+    except Exception as e:
+        return None
+
+def get_cache_info():
+    """Retorna informações do cache atual"""
+    try:
+        cache_file = get_cache_file_path()
+        if not cache_file.exists():
+            return None
+        
+        with open(cache_file, 'rb') as f:
+            cache_data = pickle.load(f)
+        
+        return {
+            'exists': True,
+            'hash': cache_data['data_hash'],
+            'timestamp': cache_data['timestamp'],
+            'expires_at': cache_data['expires_at'],
+            'records': len(cache_data['dataframe']),
+            'expired': datetime.now() > cache_data['expires_at']
+        }
+    except:
+        return None
 
 # Função para salvar dados no cache global
 def save_data_to_cache(df, data_hash):
@@ -213,8 +299,8 @@ def generate_personalized_links(df, mes, ano):
     # Gerar hash dos dados para incluir no link
     data_hash = generate_data_hash(df)
     
-    # Salvar dados no cache
-    save_data_to_cache(df, data_hash)
+    # Salvar dados no cache persistente
+    save_data_to_persistent_cache(df, data_hash)
     
     links = {}
     for gc in gcs:
@@ -498,18 +584,55 @@ def main():
         st.title(f"📋 Revisão de Carteira - {gc_from_url}")
         st.caption(f"Período: {mes_nome}/{ano_from_url}")
         
-        # Tentar recuperar dados do cache primeiro
+        # Tentar recuperar dados em ordem de prioridade
         df_original = None
         
+        # 1. Tentar cache persistente com hash específico
         if data_hash_from_url:
+            cache_result = load_data_from_persistent_cache(data_hash_from_url)
+            if cache_result:
+                df_original, _, _ = cache_result
+        
+        # 2. Tentar cache persistente sem hash específico
+        if df_original is None:
+            cache_result = load_data_from_persistent_cache()
+            if cache_result:
+                df_original, _, _ = cache_result
+        
+        # 3. Tentar cache em memória
+        if df_original is None and data_hash_from_url:
             df_original = get_data_from_cache(data_hash_from_url)
         
-        # Se não encontrou no cache, tentar session_state
+        # 4. Tentar session_state
         if df_original is None:
             df_original = st.session_state.df_original
         
         if df_original is None:
-            st.error("⚠️ Dados não encontrados. Entre em contato com o administrador.")
+            # Interface limpa para GCs - sem detalhes técnicos
+            st.error("📋 Sistema Temporariamente Indisponível")
+            
+            st.markdown("""
+            ### 🔄 Aguarde um momento...
+            
+            Os dados da carteira estão sendo atualizados pelo sistema.
+            
+            **O que fazer:**
+            - ✅ Aguarde alguns minutos e recarregue a página
+            - ✅ Tente novamente em 5-10 minutos
+            - ✅ Se o problema persistir, entre em contato com a equipe
+            
+            **Não é um erro do seu lado** - é apenas uma atualização de rotina do sistema.
+            """)
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("🔄 Recarregar Página", type="primary"):
+                    st.rerun()
+            
+            with col2:
+                st.markdown("📧 **Dúvidas?** Entre em contato com a equipe comercial")
+            
+            st.stop()
             
             with st.expander("� Instruções para Resolver", expanded=True):
                 st.markdown("""
@@ -599,7 +722,9 @@ def main():
                     # Gerar e salvar hash dos dados
                     data_hash = generate_data_hash(df)
                     st.session_state.data_hash = data_hash
-                    save_data_to_cache(df, data_hash)
+                    
+                    # Salvar no cache persistente
+                    save_success = save_data_to_persistent_cache(df, data_hash)
                     
                     # Filtrar por mês de trabalho
                     df_mes = filtrar_por_mes_trabalho(df, mes_selecionado, ano_selecionado)
@@ -610,7 +735,11 @@ def main():
                     st.success(f"✅ Arquivo carregado")
                     st.info(f"📊 {len(df):,} registros totais")
                     st.info(f"📅 {len(df_mes):,} registros para {calendar.month_name[mes_selecionado]}/{ano_selecionado}")
-                    st.success(f"🔗 Links personalizados prontos! (Hash: {data_hash[:8]}...)")
+                    
+                    if save_success:
+                        st.success(f"🔗 Links personalizados prontos! Cache válido por 30 dias (Hash: {data_hash[:8]}...)")
+                    else:
+                        st.warning("⚠️ Cache temporário salvo apenas na sessão atual")
                     
                     # Botões para gerenciar revisões
                     col1, col2, col3 = st.columns(3)
@@ -652,6 +781,34 @@ def main():
                     
                     # Alerta sobre persistência
                     st.warning("⚠️ **IMPORTANTE**: As revisões não persistem entre sessões. Use 'Salvar Revisões' regularmente!")
+                    
+                    # Informações do cache
+                    cache_info = get_cache_info()
+                    if cache_info and cache_info['exists']:
+                        st.header("💾 Status do Cache")
+                        if not cache_info['expired']:
+                            st.success(f"✅ Cache ativo - {cache_info['records']:,} registros")
+                            st.info(f"📅 Expira em: {cache_info['expires_at'].strftime('%d/%m/%Y %H:%M')}")
+                        else:
+                            st.error("❌ Cache expirado")
+                            if st.button("🔄 Recarregar Cache"):
+                                # Força recarga se há dados no session_state
+                                if st.session_state.df_original is not None:
+                                    data_hash = generate_data_hash(st.session_state.df_original)
+                                    save_data_to_persistent_cache(st.session_state.df_original, data_hash)
+                                    st.rerun()
+                    else:
+                        # Tentar carregar cache existente na inicialização
+                        cache_result = load_data_from_persistent_cache()
+                        if cache_result:
+                            df_cache, hash_cache, timestamp_cache = cache_result
+                            st.header("💾 Cache Carregado")
+                            st.success(f"✅ Dados carregados do cache ({len(df_cache):,} registros)")
+                            st.info(f"📅 Carregado em: {timestamp_cache.strftime('%d/%m/%Y %H:%M')}")
+                            
+                            # Atualizar session state com dados do cache
+                            st.session_state.df_original = df_cache
+                            st.session_state.data_hash = hash_cache
                     
                     # Filtros adicionais
                     st.header("🔍 Filtros")
