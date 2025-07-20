@@ -26,8 +26,31 @@ if 'df_original' not in st.session_state:
 
 # Função para formatação de valores em milhões
 def format_valor_milhoes(valor):
-    """Formata valor em milhões com 1 casa decimal (            # Informação sobre sistema de e-mails local
-            st.info("📧 **Para envio de e-mails:** Use o arquivo `outlook.py` separado para disparar e-mails automaticamente com integração total ao Outlook corporativo"): 10,2M)"""
+    """Formata valor em milhões com 1 casa decimal (10,2M)"""
+    if pd.isna(valor) or valor == 0:
+        return "0,0M"
+    
+    # Sempre divide por 1 milhão (assumindo que o valor vem em unidades)
+    valor_mm = valor / 1_000_000
+    
+    return f"{valor_mm:,.1f}M".replace(',', 'X').replace('.', ',').replace('X', '.')
+st.set_page_config(
+    page_title="Dashboard Revisão Carteira",
+    page_icon="📊",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# Inicializar session state para dados persistentes
+if 'dados_revisao' not in st.session_state:
+    st.session_state.dados_revisao = {}
+
+if 'df_original' not in st.session_state:
+    st.session_state.df_original = None
+
+# Função para formatação de valores em milhões
+def format_valor_milhoes(valor):
+    """Formata valor em milhões com 1 casa decimal (: 10,2M)"""
     if pd.isna(valor) or valor == 0:
         return "0,0M"
     
@@ -138,7 +161,7 @@ def apply_revisoes_to_dataframe(df):
 def calculate_metrics(df):
     """Calcula métricas principais"""
     total_registros = len(df)
-    total_valor = df['Vl.Saldo'].sum() / 1_000_000  # Em milhões
+    total_valor = df['Vl.Saldo'].sum()  # Manter valor bruto
     total_volume = df['Saldo'].sum()
     registros_revisados = df['Revisao_Realizada'].sum()
     registros_alterados = df['Data_Original_Alterada'].sum()
@@ -186,7 +209,7 @@ def generate_personalized_links(df, mes, ano):
         
         # Dados gerais do GC
         pedidos_gc = len(df_gc)
-        valor_gc = df_gc['Vl.Saldo'].sum() / 1_000_000
+        valor_gc = df_gc['Vl.Saldo'].sum()  # Manter valor bruto
         volume_gc = df_gc['Saldo'].sum()
         
         # Resumo por grupo
@@ -558,7 +581,7 @@ def main():
                 st.metric("Total Geral", f"{metricas_geral['total_registros']:,}")
             
             with col2:
-                valor_formatado = format_valor_milhoes(metricas_geral['total_valor'] * 1_000_000)
+                valor_formatado = format_valor_milhoes(metricas_geral['total_valor'])
                 st.metric("Valor Total", valor_formatado)
             
             with col3:
@@ -583,8 +606,8 @@ def main():
                              f"{delta_registros:+,}")
                 
                 with col2:
-                    valor_filtrado = format_valor_milhoes(metricas['total_valor'] * 1_000_000)
-                    valor_delta = format_valor_milhoes((metricas['total_valor'] - metricas_geral['total_valor']) * 1_000_000)
+                    valor_filtrado = format_valor_milhoes(metricas['total_valor'])
+                    valor_delta = format_valor_milhoes(metricas['total_valor'] - metricas_geral['total_valor'])
                     st.metric("Valor Filtrado", valor_filtrado, valor_delta)
                 
                 with col3:
@@ -684,7 +707,7 @@ def main():
             
             with col2:
                 # Gráfico de valor por diretoria
-                valor_diretoria = df.groupby('DIRETORIA')['Vl.Saldo'].sum() / 1_000_000
+                valor_diretoria = df.groupby('DIRETORIA')['Vl.Saldo'].sum()
                 valor_diretoria = valor_diretoria.reset_index()
                 
                 fig_valor = px.pie(
