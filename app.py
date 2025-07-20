@@ -8,8 +8,6 @@ import numpy as np
 import hashlib
 import urllib.parse
 import calendar
-import subprocess
-import platform
 
 # Configuração da página
 st.set_page_config(
@@ -25,6 +23,16 @@ if 'dados_revisao' not in st.session_state:
 
 if 'df_original' not in st.session_state:
     st.session_state.df_original = None
+
+# Função para formatação de valores em milhões
+def format_valor_milhoes(valor):
+    """Formata valor em milhões com 1 casa decimal (            # Informação sobre sistema de e-mails local
+            st.info("📧 **Para envio de e-mails:** Use o arquivo `outlook.py` separado para disparar e-mails automaticamente com integração total ao Outlook corporativo"): 10,2M)"""
+    if pd.isna(valor) or valor == 0:
+        return "0,0M"
+    
+    valor_mm = valor / 1_000_000
+    return f"{valor_mm:,.1f}M".replace(',', 'X').replace('.', ',').replace('X', '.')
 
 # Função para determinar o mês de trabalho
 def get_mes_trabalho():
@@ -159,7 +167,7 @@ def get_resumo_por_grupo(df, gc):
     }).round(2)
     
     resumo.columns = ['Qtd_Pedidos', 'Valor_Total', 'Volume_Total']
-    resumo['Valor_MM'] = (resumo['Valor_Total'] / 1_000_000).round(2)
+    resumo['Valor_MM'] = resumo['Valor_Total'].apply(format_valor_milhoes)
     resumo = resumo.reset_index()
     
     return resumo
@@ -198,83 +206,6 @@ def generate_personalized_links(df, mes, ano):
     
     return links
 
-# Função para gerar e-mail personalizado
-def gerar_email_outlook(gc, info_gc, mes, ano):
-    """Gera estrutura de e-mail para um GC específico"""
-    mes_nome = calendar.month_name[mes]
-    
-    # Montar resumo por grupos
-    grupos_texto = ""
-    for _, grupo in info_gc['grupos'].iterrows():
-        grupos_texto += f"""
-        📦 {grupo['Grupo']}:
-           • Pedidos: {grupo['Qtd_Pedidos']}
-           • Valor: R$ {grupo['Valor_MM']:.2f} milhões
-           • Volume: {grupo['Volume_Total']:,.0f}
-        """
-    
-    # Corpo do e-mail
-    corpo_email = f"""
-Olá {gc},
-
-Chegou o momento da revisão da carteira para {mes_nome}/{ano}!
-
-📊 RESUMO DA SUA CARTEIRA:
-═══════════════════════════════════════════
-📈 Total de Pedidos: {info_gc['pedidos']}
-💰 Valor Total: R$ {info_gc['valor']:.2f} milhões
-📦 Volume Total: {info_gc['volume']:,.0f}
-
-📋 DETALHAMENTO POR GRUPO:
-═══════════════════════════════════════════{grupos_texto}
-
-🔗 LINK PARA REVISÃO:
-{info_gc['link']}
-
-📝 INSTRUÇÕES:
-1. Clique no link acima
-2. Para cada pedido, você pode:
-   ✅ Confirmar - se a data está correta
-   📅 Revisar - se precisa alterar a data
-3. Suas alterações são salvas automaticamente
-
-⏰ PRAZO: Até {datetime.now() + timedelta(days=7):%d/%m/%Y}
-
-Em caso de dúvidas, entre em contato comigo.
-
-Att,
-Equipe Comercial
-    """
-    
-    assunto = f"Revisão Carteira {mes_nome}/{ano} - {gc} - {info_gc['pedidos']} pedidos"
-    
-    return assunto, corpo_email
-
-# Função para abrir Outlook com e-mail
-def abrir_outlook_com_email(destinatario, assunto, corpo):
-    """Abre o Outlook com o e-mail pré-preenchido"""
-    try:
-        # Codificar para URL
-        assunto_encoded = urllib.parse.quote(assunto)
-        corpo_encoded = urllib.parse.quote(corpo)
-        
-        # Criar mailto URL
-        mailto_url = f"mailto:{destinatario}?subject={assunto_encoded}&body={corpo_encoded}"
-        
-        # Abrir baseado no sistema operacional
-        sistema = platform.system()
-        if sistema == "Windows":
-            subprocess.run(["start", mailto_url], shell=True)
-        elif sistema == "Darwin":  # macOS
-            subprocess.run(["open", mailto_url])
-        else:  # Linux
-            subprocess.run(["xdg-open", mailto_url])
-            
-        return True
-    except Exception as e:
-        st.error(f"Erro ao abrir Outlook: {str(e)}")
-        return False
-
 # Função para formulário de revisão
 def formulario_revisao_gc(df, gc_selecionado, mes, ano):
     """Interface de revisão para um GC específico"""
@@ -296,7 +227,8 @@ def formulario_revisao_gc(df, gc_selecionado, mes, ano):
     with col1:
         st.metric("Total de Pedidos", len(df_gc))
     with col2:
-        st.metric("Valor Total", f"R$ {df_gc['Vl.Saldo'].sum()/1_000_000:.2f}M")
+        valor_gc_formatado = format_valor_milhoes(df_gc['Vl.Saldo'].sum())
+        st.metric("Valor Total", valor_gc_formatado)
     with col3:
         revisados = df_gc['Revisao_Realizada'].sum()
         st.metric("Já Revisados", f"{revisados}/{len(df_gc)}")
@@ -311,7 +243,7 @@ def formulario_revisao_gc(df, gc_selecionado, mes, ano):
         column_config={
             "Grupo": "Grupo de Produto",
             "Qtd_Pedidos": "Qtd. Pedidos",
-            "Valor_MM": "Valor (R$ MM)",
+            "Valor_MM": "Valor",
             "Volume_Total": "Volume Total"
         },
         use_container_width=True,
@@ -358,7 +290,7 @@ def formulario_revisao_gc(df, gc_selecionado, mes, ano):
                 st.write(f"**Ordem:** {ordem}")
                 st.write(f"**Cliente:** {row['Nome Emissor']}")
                 st.write(f"**Produto:** {row['Desc. Material']}")
-                st.write(f"**Valor:** R$ {row['Vl.Saldo']:,.2f}")
+                st.write(f"**Valor:** {format_valor_milhoes(row['Vl.Saldo'])}")
             
             with col2:
                 data_trabalho = row['Data_Trabalho'].strftime('%d/%m/%Y') if pd.notna(row['Data_Trabalho']) else 'N/A'
@@ -626,7 +558,8 @@ def main():
                 st.metric("Total Geral", f"{metricas_geral['total_registros']:,}")
             
             with col2:
-                st.metric("Valor Total (R$ MM)", f"R$ {metricas_geral['total_valor']:.2f}")
+                valor_formatado = format_valor_milhoes(metricas_geral['total_valor'] * 1_000_000)
+                st.metric("Valor Total", valor_formatado)
             
             with col3:
                 st.metric("Volume Total", f"{metricas_geral['total_volume']:,.0f}")
@@ -650,9 +583,9 @@ def main():
                              f"{delta_registros:+,}")
                 
                 with col2:
-                    delta_valor = metricas['total_valor'] - metricas_geral['total_valor']
-                    st.metric("Valor Filtrado (R$ MM)", f"R$ {metricas['total_valor']:.2f}",
-                             f"R$ {delta_valor:+.2f}")
+                    valor_filtrado = format_valor_milhoes(metricas['total_valor'] * 1_000_000)
+                    valor_delta = format_valor_milhoes((metricas['total_valor'] - metricas_geral['total_valor']) * 1_000_000)
+                    st.metric("Valor Filtrado", valor_filtrado, valor_delta)
                 
                 with col3:
                     delta_volume = metricas['total_volume'] - metricas_geral['total_volume']
@@ -682,7 +615,7 @@ def main():
             }).round(2)
             
             credito_stats.columns = ['Qtd_Pedidos', 'Valor_Total', 'Volume_Total', 'Revisados', 'Total_Rev', 'Alterados']
-            credito_stats['Valor_MM'] = (credito_stats['Valor_Total'] / 1_000_000).round(2)
+            credito_stats['Valor_MM'] = credito_stats['Valor_Total'].apply(format_valor_milhoes)
             credito_stats['Perc_Revisao'] = (credito_stats['Revisados'] / credito_stats['Total_Rev'] * 100).round(1)
             credito_stats['Perc_Alteracao'] = (credito_stats['Alterados'] / credito_stats['Total_Rev'] * 100).round(1)
             credito_stats = credito_stats.reset_index()
@@ -697,7 +630,7 @@ def main():
                     column_config={
                         "Status crédito": "Status de Crédito",
                         "Qtd_Pedidos": "Qtd. Pedidos",
-                        "Valor_MM": "Valor (R$ MM)",
+                        "Valor_MM": "Valor",
                         "Volume_Total": "Volume Total",
                         "Perc_Revisao": "% Revisão",
                         "Perc_Alteracao": "% Alteração"
@@ -712,7 +645,7 @@ def main():
                     credito_stats,
                     values='Valor_MM',
                     names='Status crédito',
-                    title='Distribuição de Valor por Status de Crédito (R$ MM)',
+                    title='Distribuição de Valor por Status de Crédito',
                     color_discrete_map={
                         'Liberados': '#28a745',
                         'Não liberado': '#dc3545',
@@ -758,7 +691,7 @@ def main():
                     valor_diretoria,
                     values='Vl.Saldo',
                     names='DIRETORIA',
-                    title='Distribuição de Valor por Diretoria (R$ MM)'
+                    title='Distribuição de Valor por Diretoria'
                 )
                 fig_valor.update_layout(height=400)
                 st.plotly_chart(fig_valor, use_container_width=True)
@@ -778,7 +711,7 @@ def main():
                 dados_links.append({
                     'GC': gc,
                     'Total_Pedidos': info['pedidos'],
-                    'Valor_MM': f"R$ {info['valor']:.2f}",
+                    'Valor_MM': format_valor_milhoes(info['valor']),
                     'Volume': f"{info['volume']:,.0f}",
                     'Revisados': f"{revisados}/{total_gc}",
                     'Perc_Revisao': f"{perc_rev:.1f}%",
@@ -807,64 +740,8 @@ def main():
                 hide_index=True
             )
             
-            # Seção para geração de e-mails
-            st.subheader("📧 Geração de E-mails Personalizados")
-            
-            col1, col2 = st.columns([2, 1])
-            
-            with col1:
-                gc_para_email = st.selectbox(
-                    "Selecione o GC para gerar e-mail:",
-                    list(links_gc.keys()),
-                    key="gc_email_select"
-                )
-                
-                email_gc = st.text_input(
-                    "E-mail do GC:",
-                    placeholder="exemplo@empresa.com",
-                    key="email_input"
-                )
-            
-            with col2:
-                st.write("")
-                st.write("")
-                if st.button("📧 Gerar E-mail no Outlook", type="primary"):
-                    if email_gc and gc_para_email:
-                        info_gc = links_gc[gc_para_email]
-                        assunto, corpo = gerar_email_outlook(gc_para_email, info_gc, mes_selecionado, ano_selecionado)
-                        
-                        sucesso = abrir_outlook_com_email(email_gc, assunto, corpo)
-                        if sucesso:
-                            st.success("✅ E-mail aberto no Outlook! Revise e envie.")
-                        else:
-                            st.error("❌ Erro ao abrir Outlook. Verifique se está instalado.")
-                    else:
-                        st.warning("⚠️ Selecione um GC e informe o e-mail.")
-            
-            # Botão para gerar todos os e-mails
-            st.subheader("📬 Gerar Todos os E-mails")
-            
-            col1, col2 = st.columns([3, 1])
-            with col1:
-                st.write("Gera e-mails para todos os GCs de uma vez (abrirá várias janelas do Outlook)")
-                
-            with col2:
-                if st.button("📬 Gerar Todos", type="secondary"):
-                    st.info("💡 Funcionalidade disponível quando você fornecer uma lista de e-mails dos GCs")
-                    # Aqui você pode implementar a lógica para carregar e-mails de uma planilha
-                    # ou banco de dados e gerar todos de uma vez
-            
-            # Preview do e-mail
-            if gc_para_email:
-                with st.expander("👀 Visualizar Preview do E-mail"):
-                    info_gc = links_gc[gc_para_email]
-                    assunto, corpo = gerar_email_outlook(gc_para_email, info_gc, mes_selecionado, ano_selecionado)
-                    
-                    st.write("**Assunto:**")
-                    st.code(assunto)
-                    
-                    st.write("**Corpo do E-mail:**")
-                    st.text_area("", value=corpo, height=400, disabled=True)
+            # Informação sobre sistema de e-mails local
+            st.info("� **Para envio de e-mails:** Use o sistema local `outlook.py` para disparar e-mails automaticamente com integração total ao Outlook corporativo")
             
             # Detalhamento por grupo para cada GC
             st.header("📊 Detalhamento por GC e Grupo")
@@ -893,7 +770,7 @@ def main():
                         column_config={
                             "Grupo": "Grupo de Produto",
                             "Qtd_Pedidos": "Qtd. Pedidos",
-                            "Valor_MM": "Valor (R$ MM)",
+                            "Valor_MM": "Valor",
                             "Volume_Total": "Volume Total"
                         },
                         use_container_width=True,
@@ -906,7 +783,7 @@ def main():
                     x='Grupo',
                     y='Valor_MM',
                     title=f'Valor por Grupo - {gc_detalhes}',
-                    labels={'Valor_MM': 'Valor (R$ MM)', 'Grupo': 'Grupo de Produto'}
+                    labels={'Valor_MM': 'Valor', 'Grupo': 'Grupo de Produto'}
                 )
                 fig_gc.update_xaxes(tickangle=45)
                 st.plotly_chart(fig_gc, use_container_width=True)
