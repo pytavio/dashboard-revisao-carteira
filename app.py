@@ -12,6 +12,7 @@ import subprocess
 import platform
 import pickle
 import os
+import webbrowser
 from pathlib import Path
 
 # Configuração da página
@@ -407,15 +408,30 @@ def abrir_outlook_com_email(destinatario, assunto, corpo):
         # Abrir baseado no sistema operacional
         sistema = platform.system()
         if sistema == "Windows":
-            subprocess.run(["start", mailto_url], shell=True)
+            # Tentar diferentes métodos no Windows
+            try:
+                # Método 1: usar os.startfile
+                import os
+                os.startfile(mailto_url)
+                return True
+            except:
+                try:
+                    # Método 2: usar subprocess com start
+                    subprocess.run(f'start "" "{mailto_url}"', shell=True, check=False)
+                    return True
+                except:
+                    # Método 3: usar webbrowser
+                    import webbrowser
+                    webbrowser.open(mailto_url)
+                    return True
         elif sistema == "Darwin":  # macOS
             subprocess.run(["open", mailto_url])
+            return True
         else:  # Linux
             subprocess.run(["xdg-open", mailto_url])
+            return True
             
-        return True
     except Exception as e:
-        st.error(f"Erro ao abrir Outlook: {str(e)}")
         return False
 
 # Função para formulário de revisão
@@ -617,13 +633,9 @@ def formulario_revisao_gc(df, gc_selecionado, mes, ano):
     with col2:
         st.subheader("📤 Enviar Revisões")
         
-        # Seção para e-mail de notificação
-        email_admin = st.text_input(
-            "📧 E-mail do Administrador:",
-            placeholder="admin@empresa.com",
-            help="E-mail para receber notificação de conclusão",
-            key="email_admin_notif"
-        )
+        # E-mail fixo do administrador
+        email_admin = "otavio.monteiro@icl-group.com"
+        st.info(f"📧 **Administrador:** {email_admin}")
         
         if revisoes_gc:
             # Gerar nome do arquivo
@@ -644,32 +656,92 @@ def formulario_revisao_gc(df, gc_selecionado, mes, ano):
             
             revisoes_json = json.dumps(dados_envio, indent=2, default=str, ensure_ascii=False)
             
-            # Botão de download das revisões
-            st.download_button(
-                "📤 Baixar Minhas Revisões",
-                data=revisoes_json,
-                file_name=nome_arquivo,
-                mime="application/json",
-                help="Baixa suas revisões para enviar ao administrador",
-                type="primary"
-            )
+            # Duas opções para o GC
+            col_download, col_email = st.columns(2)
             
-            # Botão para gerar e-mail de notificação
-            if email_admin:
-                if st.button("📧 Enviar E-mail de Conclusão", help="Abre e-mail para notificar o administrador"):
+            with col_download:
+                st.markdown("**💾 Opção 1: Backup Local**")
+                # Botão de download das revisões (para backup pessoal)
+                st.download_button(
+                    "� Baixar Backup (Opcional)",
+                    data=revisoes_json,
+                    file_name=nome_arquivo,
+                    mime="application/json",
+                    help="Backup pessoal das suas revisões",
+                    type="secondary"
+                )
+                st.caption("Para seu controle pessoal")
+            
+            with col_email:
+                st.markdown("**📧 Opção 2: Enviar Direto**")
+                # Botão para gerar e-mail com JSON inline
+                if st.button("📧 Enviar E-mail Completo", help="Envia e-mail com dados inclusos - SEM ANEXO!", type="primary"):
                     assunto, corpo = gerar_email_conclusao_gc(
                         gc_selecionado, len(revisoes_gc), total_pedidos_gc, 
-                        mes, ano, nome_arquivo
+                        mes, ano, revisoes_json
                     )
                     
                     sucesso = abrir_outlook_com_email(email_admin, assunto, corpo)
                     if sucesso:
-                        st.success("✅ E-mail de notificação aberto no Outlook!")
-                        st.info("💡 **Lembre-se:** Anexe o arquivo JSON baixado no e-mail antes de enviar!")
+                        st.success("✅ E-mail pronto para envio!")
+                        st.info("🎉 **TUDO INCLUÍDO!** Só clicar 'Enviar' no seu e-mail!")
                     else:
-                        st.error("❌ Erro ao abrir Outlook.")
+                        # Fallback: mostrar informações para envio manual
+                        st.warning("⚠️ Vamos fazer manualmente - é mais fácil! 😊")
+                        
+                        st.markdown("### 📧 **COPIE E COLE NO SEU E-MAIL:**")
+                        
+                        # Informações em formato fácil de copiar
+                        st.markdown("**📧 Para:**")
+                        st.code(email_admin, language=None)
+                        
+                        st.markdown("**📋 Assunto:**")
+                        st.text_area("Copie o assunto:", value=assunto, height=60, key="assunto_copy_new")
+                        
+                        st.markdown("**📝 Mensagem (COM DADOS INCLUSOS):**")
+                        st.text_area("Copie TODA a mensagem:", value=corpo, height=300, key="corpo_copy_new")
+                        
+                        st.success("✅ **SEM ANEXO NECESSÁRIO!** Tudo está na mensagem!")
+                
+                st.caption("✨ Recomendado - Mais fácil!")
         else:
             st.warning("⚠️ Faça pelo menos uma revisão antes de enviar!")
+    
+    # Instruções para o GC
+    with st.expander("� Como Finalizar sua Revisão", expanded=False):
+                assunto, corpo = gerar_email_conclusao_gc(
+                    gc_selecionado, len(revisoes_gc), total_pedidos_gc, 
+                    mes, ano, nome_arquivo
+                )
+                
+                sucesso = abrir_outlook_com_email(email_admin, assunto, corpo)
+                if sucesso:
+                    st.success("✅ E-mail aberto! Anexe o arquivo JSON e envie!")
+                    st.info("💡 **IMPORTANTE:** Anexe o arquivo JSON que você baixou!")
+                else:
+                    # Fallback: mostrar informações para envio manual
+                    st.warning("⚠️ Vamos fazer manualmente - é mais fácil! 😊")
+                    
+                    st.markdown("### 📧 **COPIE E COLE NO SEU E-MAIL:**")
+                    
+                    # Informações em formato fácil de copiar
+                    col_a, col_b = st.columns(2)
+                    
+                    with col_a:
+                        st.markdown("**📧 Para:**")
+                        st.code(email_admin, language=None)
+                        
+                        st.markdown("**� Assunto:**")
+                        st.text_area("Copie o assunto:", value=assunto, height=60, key="assunto_copy")
+                    
+                    with col_b:
+                        st.markdown("**📝 Mensagem:**")
+                        st.text_area("Copie a mensagem:", value=corpo, height=200, key="corpo_copy")
+                    
+                    st.error(f"📎 **NÃO ESQUEÇA:** Anexar o arquivo `{nome_arquivo}`")
+                    
+                    st.markdown("---")
+                    st.info("💡 **Dica:** Abra seu e-mail, copie e cole as informações acima, anexe o arquivo JSON e envie!")
     
     # Instruções para o GC
     with st.expander("📋 Como Finalizar sua Revisão", expanded=False):
@@ -704,15 +776,14 @@ def formulario_revisao_gc(df, gc_selecionado, mes, ano):
     st.markdown("---")
 
 # Função para gerar e-mail de notificação de conclusão
-def gerar_email_conclusao_gc(gc, total_revisados, total_pedidos, mes, ano, arquivo_revisoes):
+def gerar_email_conclusao_gc(gc, total_revisados, total_pedidos, mes, ano, dados_revisoes_json):
     """Gera e-mail de notificação quando GC termina revisão"""
     mes_nome = calendar.month_name[mes]
     perc_revisao = (total_revisados / total_pedidos * 100) if total_pedidos > 0 else 0
     
     assunto = f"✅ Revisão Concluída - {gc} - {mes_nome}/{ano}"
     
-    corpo_email = f"""
-Olá,
+    corpo_email = f"""Olá,
 
 O GC {gc} concluiu a revisão da carteira de {mes_nome}/{ano}.
 
@@ -725,17 +796,21 @@ O GC {gc} concluiu a revisão da carteira de {mes_nome}/{ano}.
 📈 % Conclusão: {perc_revisao:.1f}%
 🕐 Data/Hora: {datetime.now().strftime('%d/%m/%Y às %H:%M')}
 
-📎 ARQUIVO DE REVISÕES:
-Arquivo anexo: {arquivo_revisoes}
+📎 DADOS DA REVISÃO (JSON):
+═══════════════════════════════════════════
+
+{dados_revisoes_json}
+
+═══════════════════════════════════════════
 
 🔄 PRÓXIMOS PASSOS:
-1. Baixar o arquivo anexo
+1. Copiar o JSON acima e salvar como arquivo .json
 2. Importar no dashboard principal
 3. Consolidar com outras revisões
 4. Gerar relatório final
 
 Att,
-Sistema de Revisão de Carteira
+{gc} - Sistema de Revisão de Carteira
     """
     
     return assunto, corpo_email
