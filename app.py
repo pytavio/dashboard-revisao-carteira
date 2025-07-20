@@ -10,10 +10,6 @@ import urllib.parse
 import calendar
 import subprocess
 import platform
-import pickle
-import os
-import webbrowser
-from pathlib import Path
 
 # Configuração da página
 st.set_page_config(
@@ -29,12 +25,6 @@ if 'dados_revisao' not in st.session_state:
 
 if 'df_original' not in st.session_state:
     st.session_state.df_original = None
-
-if 'data_hash' not in st.session_state:
-    st.session_state.data_hash = None
-
-if 'cached_data' not in st.session_state:
-    st.session_state.cached_data = {}
 
 # Função para determinar o mês de trabalho
 def get_mes_trabalho():
@@ -57,8 +47,8 @@ def filtrar_por_mes_trabalho(df, mes=None, ano=None):
         mes, ano = get_mes_trabalho()
     
     # Converter a coluna de data se necessário
-    if 'Revisão Data Faturamento' in df.columns:
-        df['Data_Trabalho'] = pd.to_datetime(df['Revisão Data Faturamento'], errors='coerce')
+    if '1ª.DT.DIV.REM' in df.columns:
+        df['Data_Trabalho'] = pd.to_datetime(df['1ª.DT.DIV.REM'], errors='coerce')
         
         # Filtrar pelo mês e ano
         mask = (df['Data_Trabalho'].dt.month == mes) & (df['Data_Trabalho'].dt.year == ano)
@@ -72,111 +62,6 @@ def generate_gc_hash(gc_name, mes, ano):
     unique_string = f"{gc_name}_{mes}_{ano}"
     return hashlib.md5(unique_string.encode()).hexdigest()[:10]
 
-# Função para gerar hash dos dados
-def generate_data_hash(df):
-    """Gera hash dos dados para identificação única"""
-    # Usar as primeiras linhas e colunas para gerar um hash único
-    sample_data = str(df.head(10).to_dict()) + str(df.columns.tolist())
-    return hashlib.md5(sample_data.encode()).hexdigest()[:16]
-
-# Funções para cache persistente em arquivo
-def get_cache_file_path():
-    """Retorna o caminho do arquivo de cache"""
-    return Path("/tmp/carteira_cache.pkl") if os.name != 'nt' else Path("carteira_cache.pkl")
-
-def save_data_to_persistent_cache(df, data_hash):
-    """Salva dados em cache persistente (arquivo)"""
-    try:
-        cache_data = {
-            'data_hash': data_hash,
-            'dataframe': df,
-            'timestamp': datetime.now(),
-            'expires_at': datetime.now() + timedelta(days=30)  # Cache dura 30 dias
-        }
-        
-        cache_file = get_cache_file_path()
-        with open(cache_file, 'wb') as f:
-            pickle.dump(cache_data, f)
-        
-        # Também salvar no session_state como backup
-        if 'global_data_cache' not in st.session_state:
-            st.session_state.global_data_cache = {}
-        st.session_state.global_data_cache[data_hash] = df.copy()
-        
-        return True
-    except Exception as e:
-        st.error(f"Erro ao salvar cache: {str(e)}")
-        return False
-
-def load_data_from_persistent_cache(data_hash=None):
-    """Carrega dados do cache persistente"""
-    try:
-        cache_file = get_cache_file_path()
-        if not cache_file.exists():
-            return None
-        
-        with open(cache_file, 'rb') as f:
-            cache_data = pickle.load(f)
-        
-        # Verificar se não expirou
-        if datetime.now() > cache_data['expires_at']:
-            cache_file.unlink()  # Remove arquivo expirado
-            return None
-        
-        # Se hash específico fornecido, verificar se bate
-        if data_hash and cache_data['data_hash'] != data_hash:
-            return None
-        
-        # Retornar dados
-        df = cache_data['dataframe']
-        
-        # Salvar também no session_state
-        st.session_state.df_original = df
-        if 'global_data_cache' not in st.session_state:
-            st.session_state.global_data_cache = {}
-        st.session_state.global_data_cache[cache_data['data_hash']] = df.copy()
-        
-        return df, cache_data['data_hash'], cache_data['timestamp']
-        
-    except Exception as e:
-        return None
-
-def get_cache_info():
-    """Retorna informações do cache atual"""
-    try:
-        cache_file = get_cache_file_path()
-        if not cache_file.exists():
-            return None
-        
-        with open(cache_file, 'rb') as f:
-            cache_data = pickle.load(f)
-        
-        return {
-            'exists': True,
-            'hash': cache_data['data_hash'],
-            'timestamp': cache_data['timestamp'],
-            'expires_at': cache_data['expires_at'],
-            'records': len(cache_data['dataframe']),
-            'expired': datetime.now() > cache_data['expires_at']
-        }
-    except:
-        return None
-
-# Função para salvar dados no cache global
-def save_data_to_cache(df, data_hash):
-    """Salva dados no cache global do Streamlit"""
-    if 'global_data_cache' not in st.session_state:
-        st.session_state.global_data_cache = {}
-    
-    st.session_state.global_data_cache[data_hash] = df.copy()
-
-# Função para recuperar dados do cache
-def get_data_from_cache(data_hash):
-    """Recupera dados do cache global"""
-    if 'global_data_cache' in st.session_state:
-        return st.session_state.global_data_cache.get(data_hash, None)
-    return None
-
 # Função para carregar dados
 @st.cache_data
 def load_data(uploaded_file):
@@ -186,29 +71,18 @@ def load_data(uploaded_file):
         
         # Limpeza e tratamento dos dados
         if 'Vl.Saldo' in df.columns:
-            # Tratar valores que podem vir em diferentes formatos
-            df['Vl.Saldo'] = df['Vl.Saldo'].astype(str)
-            # Remover espaços e caracteres especiais, exceto números, vírgulas e pontos
-            df['Vl.Saldo'] = df['Vl.Saldo'].str.replace(r'[^\d,.-]', '', regex=True)
-            # Se tem vírgula como decimal (formato brasileiro), substituir por ponto
-            df['Vl.Saldo'] = df['Vl.Saldo'].str.replace(',', '.')
-            # Converter para numérico
-            df['Vl.Saldo'] = pd.to_numeric(df['Vl.Saldo'], errors='coerce')
+            df['Vl.Saldo'] = pd.to_numeric(df['Vl.Saldo'].astype(str).str.replace('.', '').str.replace(',', '.'), errors='coerce')
         
         if 'Saldo' in df.columns:
-            # Mesmo tratamento para Saldo
-            df['Saldo'] = df['Saldo'].astype(str)
-            df['Saldo'] = df['Saldo'].str.replace(r'[^\d,.-]', '', regex=True)
-            df['Saldo'] = df['Saldo'].str.replace(',', '.')
-            df['Saldo'] = pd.to_numeric(df['Saldo'], errors='coerce')
+            df['Saldo'] = pd.to_numeric(df['Saldo'].astype(str).str.replace('.', '').str.replace(',', '.'), errors='coerce')
         
         # Converter data de entrega original
         if 'Dt. Dej. Rem.' in df.columns:
             df['Dt. Dej. Rem.'] = pd.to_datetime(df['Dt. Dej. Rem.'], format='%d/%m/%Y', errors='coerce')
         
-        # Converter data de trabalho (Revisão Data Faturamento)
-        if 'Revisão Data Faturamento' in df.columns:
-            df['Data_Trabalho'] = pd.to_datetime(df['Revisão Data Faturamento'], errors='coerce')
+        # Converter data de trabalho (1ª.DT.DIV.REM)
+        if '1ª.DT.DIV.REM' in df.columns:
+            df['Data_Trabalho'] = pd.to_datetime(df['1ª.DT.DIV.REM'], errors='coerce')
         
         # Adicionar colunas de controle se não existirem
         if 'Revisao_Realizada' not in df.columns:
@@ -239,46 +113,16 @@ def apply_revisoes_to_dataframe(df):
     
     df_updated = df.copy()
     
-    for revisao_key, revisao_data in st.session_state.dados_revisao.items():
-        # Verificar se revisao_data é um dicionário válido
-        if not isinstance(revisao_data, dict):
-            continue
-            
-        # Verificar se tem dados essenciais
-        if 'gc' not in revisao_data or 'data_revisao' not in revisao_data:
-            continue
-            
-        # Verificar se é o formato novo (ordem_material) ou antigo (só ordem)
-        if '_' in revisao_key and 'ordem' in revisao_data and 'material' in revisao_data:
-            # Formato novo: usar ordem + material
-            ordem = revisao_data['ordem']
-            material = revisao_data['material']
-            mask = (df_updated['Ord.venda'] == ordem) & (df_updated['Material'] == material)
-        else:
-            # Formato antigo: compatibilidade (só ordem)
-            ordem = revisao_key if isinstance(revisao_key, (int, str)) else revisao_data.get('ordem', revisao_key)
-            mask = df_updated['Ord.venda'] == ordem
-        
+    for ordem, revisao_data in st.session_state.dados_revisao.items():
+        mask = df_updated['Ord.venda'] == ordem
         if mask.any():
             df_updated.loc[mask, 'Revisao_Realizada'] = True
+            df_updated.loc[mask, 'Data_Revisao'] = pd.to_datetime(revisao_data['data_revisao'])
+            df_updated.loc[mask, 'Revisado_Por'] = revisao_data['gc']
             
-            # Verificar se data_revisao existe antes de usar
-            if 'data_revisao' in revisao_data:
-                try:
-                    df_updated.loc[mask, 'Data_Revisao'] = pd.to_datetime(revisao_data['data_revisao'])
-                except:
-                    pass  # Se não conseguir converter a data, ignore
-            
-            # Verificar se gc existe antes de usar
-            if 'gc' in revisao_data:
-                df_updated.loc[mask, 'Revisado_Por'] = revisao_data['gc']
-            
-            if revisao_data.get('nova_data'):
+            if revisao_data['nova_data']:
                 df_updated.loc[mask, 'Data_Original_Alterada'] = True
-                try:
-                    df_updated.loc[mask, 'Nova_Data_Entrega'] = pd.to_datetime(revisao_data['nova_data'])
-                except:
-                    pass  # Se não conseguir converter a data, ignore
+                df_updated.loc[mask, 'Nova_Data_Entrega'] = pd.to_datetime(revisao_data['nova_data'])
     
     return df_updated
 
@@ -315,7 +159,7 @@ def get_resumo_por_grupo(df, gc):
     }).round(2)
     
     resumo.columns = ['Qtd_Pedidos', 'Valor_Total', 'Volume_Total']
-    resumo['Valor_MM'] = (resumo['Valor_Total'] / 1_000_000).round(0)
+    resumo['Valor_MM'] = (resumo['Valor_Total'] / 1_000_000).round(2)
     resumo = resumo.reset_index()
     
     return resumo
@@ -324,14 +168,8 @@ def get_resumo_por_grupo(df, gc):
 def generate_personalized_links(df, mes, ano):
     """Gera links personalizados para cada GC"""
     gcs = df['GC'].dropna().unique()
-    base_url = "https://dash-carteira-review.streamlit.app"  # URL real do Streamlit
+    base_url = "https://seu-app-streamlit.com"  # Substitua pela URL real
     mes_nome = calendar.month_name[mes]
-    
-    # Gerar hash dos dados para incluir no link
-    data_hash = generate_data_hash(df)
-    
-    # Salvar dados no cache persistente
-    save_data_to_persistent_cache(df, data_hash)
     
     links = {}
     for gc in gcs:
@@ -346,12 +184,10 @@ def generate_personalized_links(df, mes, ano):
         # Resumo por grupo
         resumo_grupos = get_resumo_por_grupo(df, gc)
         
-        # Incluir hash dos dados no link
-        link = f"{base_url}?gc={urllib.parse.quote(gc)}&hash={gc_hash}&mes={mes}&ano={ano}&data={data_hash}"
+        link = f"{base_url}?gc={urllib.parse.quote(gc)}&hash={gc_hash}&mes={mes}&ano={ano}"
         links[gc] = {
             'link': link,
             'hash': gc_hash,
-            'data_hash': data_hash,
             'pedidos': pedidos_gc,
             'valor': valor_gc,
             'volume': volume_gc,
@@ -367,31 +203,30 @@ def gerar_email_outlook(gc, info_gc, mes, ano):
     """Gera estrutura de e-mail para um GC específico"""
     mes_nome = calendar.month_name[mes]
     
-    # Extrair primeiro nome para personalização
-    primeiro_nome = gc.split()[0] if gc else gc
-    
     # Montar resumo por grupos
     grupos_texto = ""
     for _, grupo in info_gc['grupos'].iterrows():
-        grupos_texto += f"""        📦 {grupo['Grupo']}:
+        grupos_texto += f"""
+        📦 {grupo['Grupo']}:
            • Pedidos: {grupo['Qtd_Pedidos']}
-           • Valor: R$ {grupo['Valor_MM']:.0f} milhões
+           • Valor: R$ {grupo['Valor_MM']:.2f} milhões
+           • Volume: {grupo['Volume_Total']:,.0f}
         """
     
     # Corpo do e-mail
-    corpo_email = f"""Olá {primeiro_nome},
+    corpo_email = f"""
+Olá {gc},
 
-Vamos revisar a sua carteira para {mes_nome}/{ano}!
-Com isso, vamos garantir que a gente inicie o próximo mês mais redondos com a carteira que será faturada, evitando cancelamento de pedidos.
+Chegou o momento da revisão da carteira para {mes_nome}/{ano}!
 
 📊 RESUMO DA SUA CARTEIRA:
 ═══════════════════════════════════════════
 📈 Total de Pedidos: {info_gc['pedidos']}
-💰 Valor Total: R$ {info_gc['valor']:.0f} milhões
+💰 Valor Total: R$ {info_gc['valor']:.2f} milhões
+📦 Volume Total: {info_gc['volume']:,.0f}
 
 📋 DETALHAMENTO POR GRUPO:
-═══════════════════════════════════════════
-{grupos_texto}
+═══════════════════════════════════════════{grupos_texto}
 
 🔗 LINK PARA REVISÃO:
 {info_gc['link']}
@@ -401,92 +236,23 @@ Com isso, vamos garantir que a gente inicie o próximo mês mais redondos com a 
 2. Para cada pedido, você pode:
    ✅ Confirmar - se a data está correta
    📅 Revisar - se precisa alterar a data
-3. No final, baixe o arquivo JSON e responda anexando ele para mim no e-mail ou me envie no Teams. O arquivo JSON é o protocolo da revisão da sua carteira, através dele conseguiremos com o time ADV atualizar as datas corretamente no SAP.
+3. Suas alterações são salvas automaticamente
 
-⏰ PRAZO: Até {get_ultimo_dia_mes()}/{mes:02d}/{ano}
+⏰ PRAZO: Até {datetime.now() + timedelta(days=7):%d/%m/%Y}
 
 Em caso de dúvidas, entre em contato comigo.
 
 Att,
-Otávio Monteiro"""
+Equipe Comercial
+    """
     
     assunto = f"Revisão Carteira {mes_nome}/{ano} - {gc} - {info_gc['pedidos']} pedidos"
     
     return assunto, corpo_email
 
-# Função auxiliar para obter último dia do mês
-def get_ultimo_dia_mes():
-    """Retorna último dia do mês atual"""
-    from calendar import monthrange
-    hoje = datetime.now()
-    _, ultimo_dia = monthrange(hoje.year, hoje.month)
-    return ultimo_dia
-
-# Função para resolver nome no Outlook
-def resolver_nome_outlook(outlook, nome):
-    """Tentar resolver nome no Outlook"""
-    try:
-        recipient = outlook.Session.CreateRecipient(nome)
-        recipient.Resolve()
-        if recipient.Resolved:
-            return recipient.Address
-        else:
-            print(f"Aviso: Não foi possível resolver o nome '{nome}' no Outlook")
-            return nome
-    except:
-        print(f"Erro ao resolver nome '{nome}' no Outlook")
-        return nome
-
-# Função para extrair primeiro nome
-def extrair_primeiro_nome(nome_completo):
-    """Extrair apenas o primeiro nome para deixar o email mais natural"""
-    try:
-        if pd.isna(nome_completo) or not nome_completo:
-            return nome_completo
-        # Pegar apenas a primeira palavra (primeiro nome)
-        primeiro_nome = str(nome_completo).strip().split()[0]
-        return primeiro_nome
-    except:
-        return nome_completo
-
 # Função para abrir Outlook com e-mail
 def abrir_outlook_com_email(destinatario, assunto, corpo):
-    """Abre o Outlook com o e-mail pré-preenchido usando COM do Outlook"""
-    try:
-        # Tentar usar COM do Outlook primeiro (mais confiável)
-        try:
-            import win32com.client as win32
-            outlook = win32.Dispatch('outlook.application')
-            
-            # Criar novo e-mail
-            mail = outlook.CreateItem(0)  # 0 = olMailItem
-            
-            # Resolver nome do destinatário
-            destinatario_resolvido = resolver_nome_outlook(outlook, destinatario)
-            
-            mail.To = destinatario_resolvido
-            mail.Subject = assunto
-            mail.Body = corpo
-            
-            # Exibir o e-mail (não enviar automaticamente)
-            mail.Display(True)
-            
-            return True
-            
-        except ImportError:
-            # Se não tem win32com, usar método mailto
-            return abrir_outlook_mailto(destinatario, assunto, corpo)
-        except Exception as e:
-            print(f"Erro no COM do Outlook: {e}")
-            # Fallback para mailto
-            return abrir_outlook_mailto(destinatario, assunto, corpo)
-            
-    except Exception as e:
-        print(f"❌ Erro ao abrir Outlook: {e}")
-        return False
-
-def abrir_outlook_mailto(destinatario, assunto, corpo):
-    """Método de fallback usando mailto URL"""
+    """Abre o Outlook com o e-mail pré-preenchido"""
     try:
         # Codificar para URL
         assunto_encoded = urllib.parse.quote(assunto)
@@ -498,30 +264,15 @@ def abrir_outlook_mailto(destinatario, assunto, corpo):
         # Abrir baseado no sistema operacional
         sistema = platform.system()
         if sistema == "Windows":
-            # Tentar diferentes métodos no Windows
-            try:
-                # Método 1: usar os.startfile
-                import os
-                os.startfile(mailto_url)
-                return True
-            except:
-                try:
-                    # Método 2: usar subprocess com start
-                    subprocess.run(f'start "" "{mailto_url}"', shell=True, check=False)
-                    return True
-                except:
-                    # Método 3: usar webbrowser
-                    import webbrowser
-                    webbrowser.open(mailto_url)
-                    return True
+            subprocess.run(["start", mailto_url], shell=True)
         elif sistema == "Darwin":  # macOS
             subprocess.run(["open", mailto_url])
-            return True
         else:  # Linux
             subprocess.run(["xdg-open", mailto_url])
-            return True
             
+        return True
     except Exception as e:
+        st.error(f"Erro ao abrir Outlook: {str(e)}")
         return False
 
 # Função para formulário de revisão
@@ -545,7 +296,7 @@ def formulario_revisao_gc(df, gc_selecionado, mes, ano):
     with col1:
         st.metric("Total de Pedidos", len(df_gc))
     with col2:
-        st.metric("Valor Total", f"R$ {df_gc['Vl.Saldo'].sum()/1_000_000:.0f}M")
+        st.metric("Valor Total", f"R$ {df_gc['Vl.Saldo'].sum()/1_000_000:.2f}M")
     with col3:
         revisados = df_gc['Revisao_Realizada'].sum()
         st.metric("Já Revisados", f"{revisados}/{len(df_gc)}")
@@ -599,9 +350,6 @@ def formulario_revisao_gc(df, gc_selecionado, mes, ano):
     # Processar cada pedido
     for idx, row in df_filtered.iterrows():
         ordem = row['Ord.venda']
-        material = row['Material'] if 'Material' in row and pd.notna(row['Material']) else 'sem_material'
-        # Criar ID único combinando ordem + material para itens múltiplos da mesma ordem
-        unique_id = f"{ordem}_{material}_{idx}"
         
         with st.container():
             col1, col2, col3 = st.columns([2, 2, 1])
@@ -610,7 +358,7 @@ def formulario_revisao_gc(df, gc_selecionado, mes, ano):
                 st.write(f"**Ordem:** {ordem}")
                 st.write(f"**Cliente:** {row['Nome Emissor']}")
                 st.write(f"**Produto:** {row['Desc. Material']}")
-                st.write(f"**Valor:** R$ {row['Vl.Saldo']:,.0f}")
+                st.write(f"**Valor:** R$ {row['Vl.Saldo']:,.2f}")
             
             with col2:
                 data_trabalho = row['Data_Trabalho'].strftime('%d/%m/%Y') if pd.notna(row['Data_Trabalho']) else 'N/A'
@@ -633,13 +381,9 @@ def formulario_revisao_gc(df, gc_selecionado, mes, ano):
                 col_check, col_rev = st.columns(2)
                 
                 with col_check:
-                    if st.button("✅ OK", key=f"check_{unique_id}", help="Data está correta"):
-                        # Usar chave única ordem + material para salvar revisão
-                        revisao_key = f"{ordem}_{material}"
-                        st.session_state.dados_revisao[revisao_key] = {
+                    if st.button("✅ OK", key=f"check_{ordem}", help="Data está correta"):
+                        st.session_state.dados_revisao[ordem] = {
                             'gc': gc_selecionado,
-                            'ordem': ordem,
-                            'material': material,
                             'data_revisao': datetime.now().isoformat(),
                             'nova_data': None,
                             'acao': 'check'
@@ -647,13 +391,13 @@ def formulario_revisao_gc(df, gc_selecionado, mes, ano):
                         st.rerun()
                 
                 with col_rev:
-                    if st.button("📅 Revisar", key=f"rev_{unique_id}", help="Alterar data"):
-                        st.session_state[f'revisar_{unique_id}'] = True
+                    if st.button("📅 Revisar", key=f"rev_{ordem}", help="Alterar data"):
+                        st.session_state[f'revisar_{ordem}'] = True
                         st.rerun()
         
         # Formulário para alterar data (aparece quando clica em Revisar)
-        if st.session_state.get(f'revisar_{unique_id}', False):
-            with st.form(f"form_data_{unique_id}"):
+        if st.session_state.get(f'revisar_{ordem}', False):
+            with st.form(f"form_data_{ordem}"):
                 st.write("**Alterar Data de Entrega:**")
                 col1, col2 = st.columns(2)
                 
@@ -661,171 +405,35 @@ def formulario_revisao_gc(df, gc_selecionado, mes, ano):
                     nova_data = st.date_input(
                         "Nova Data de Entrega",
                         value=row['Data_Trabalho'].date() if pd.notna(row['Data_Trabalho']) else date.today(),
-                        key=f"data_{unique_id}"
+                        key=f"data_{ordem}"
                     )
                 
                 with col2:
                     justificativa = st.text_input(
                         "Justificativa (opcional)",
-                        key=f"just_{unique_id}"
+                        key=f"just_{ordem}"
                     )
                 
                 col_save, col_cancel = st.columns(2)
                 with col_save:
                     if st.form_submit_button("💾 Salvar"):
-                        # Usar chave única ordem + material para salvar revisão
-                        revisao_key = f"{ordem}_{material}"
-                        st.session_state.dados_revisao[revisao_key] = {
+                        st.session_state.dados_revisao[ordem] = {
                             'gc': gc_selecionado,
-                            'ordem': ordem,
-                            'material': material,
                             'data_revisao': datetime.now().isoformat(),
                             'nova_data': nova_data.isoformat(),
                             'justificativa': justificativa,
                             'acao': 'revisao'
                         }
-                        st.session_state[f'revisar_{unique_id}'] = False
+                        st.session_state[f'revisar_{ordem}'] = False
                         st.success("Data alterada com sucesso!")
                         st.rerun()
                 
                 with col_cancel:
                     if st.form_submit_button("❌ Cancelar"):
-                        st.session_state[f'revisar_{unique_id}'] = False
+                        st.session_state[f'revisar_{ordem}'] = False
                         st.rerun()
         
         st.markdown("---")
-    
-    # Seção de finalização e envio para o GC
-    st.header("🎯 Finalizar Revisão")
-    
-    # Calcular estatísticas de conclusão
-    total_pedidos_gc = len(df_gc)
-    revisados = df_gc['Revisao_Realizada'].sum()
-    perc_conclusao = (revisados / total_pedidos_gc * 100) if total_pedidos_gc > 0 else 0
-    
-    # Verificar se tem revisões feitas nesta sessão
-    revisoes_gc = {k: v for k, v in st.session_state.dados_revisao.items() 
-                   if v.get('gc') == gc_selecionado}
-    
-    col1, col2 = st.columns([2, 1])
-    
-    with col1:
-        st.subheader("📊 Status da sua Revisão")
-        
-        progress_bar = st.progress(perc_conclusao / 100)
-        st.write(f"**Progresso:** {revisados}/{total_pedidos_gc} pedidos revisados ({perc_conclusao:.1f}%)")
-        
-        if revisoes_gc:
-            st.success(f"✅ Você fez {len(revisoes_gc)} revisões nesta sessão!")
-        else:
-            st.info("ℹ️ Nenhuma revisão feita nesta sessão ainda.")
-    
-    with col2:
-        st.subheader("📤 Enviar Revisões")
-        
-        # E-mail fixo do administrador
-        email_admin = "otavio.monteiro@icl-group.com"
-        st.info(f"📧 **Administrador:** {email_admin}")
-        
-        if revisoes_gc:
-            # Gerar nome do arquivo
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M')
-            nome_arquivo = f"revisoes_{gc_selecionado.replace(' ', '_')}_{mes_nome}_{ano}_{timestamp}.json"
-            
-            # Preparar dados das revisões para download
-            dados_envio = {
-                'gc': gc_selecionado,
-                'mes': mes,
-                'ano': ano,
-                'mes_nome': mes_nome,
-                'timestamp': datetime.now().isoformat(),
-                'total_pedidos': total_pedidos_gc,
-                'total_revisados': len(revisoes_gc),
-                'revisoes': revisoes_gc
-            }
-            
-            revisoes_json = json.dumps(dados_envio, indent=2, default=str, ensure_ascii=False)
-            
-            # Botão de download das revisões
-            st.download_button(
-                "📱 Baixar Backup",
-                data=revisoes_json,
-                file_name=nome_arquivo,
-                mime="application/json",
-                help="Baixa suas revisões para enviar ao Otávio",
-                type="primary"
-            )
-            
-            # Orientação simples
-            st.success("✅ Agora envie o arquivo baixado para:")
-            st.info("📧 **E-mail:** otavio.monteiro@icl-group.com")
-            st.info("💬 **Teams:** Otávio Monteiro")
-            st.caption(f"📎 **Assunto:** Revisão Carteira - {gc_selecionado} - {mes_nome}/{ano}")
-        else:
-            st.warning("⚠️ Faça pelo menos uma revisão antes de enviar!")
-    
-    # Instruções para o GC
-    with st.expander("📋 Como Finalizar sua Revisão", expanded=False):
-        st.markdown(f"""
-        ### 🎯 Passos Simples:
-        
-        **1. ✅ Revise todos os pedidos**
-        - Clique "✅ OK" se a data está correta
-        - Clique "� Revisar" para alterar a data
-        
-        **2. 📤 Quando terminar**
-        - Clique em "📱 Baixar Backup" acima
-        - Salve o arquivo no seu computador
-        
-        **3. 📧 Envie para o Otávio**
-        - **E-mail:** otavio.monteiro@icl-group.com
-        - **Teams:** Otávio Monteiro  
-        - **Anexe** o arquivo JSON baixado
-        - **Assunto:** "Revisão Carteira - [SEU NOME] - {mes_nome}/{ano}"
-        
-        **🎉 Pronto! Só isso!**
-        """)
-    
-    st.markdown("---")
-# Função para gerar e-mail de notificação de conclusão
-def gerar_email_conclusao_gc(gc, total_revisados, total_pedidos, mes, ano, dados_revisoes_json):
-    """Gera e-mail de notificação quando GC termina revisão"""
-    mes_nome = calendar.month_name[mes]
-    perc_revisao = (total_revisados / total_pedidos * 100) if total_pedidos > 0 else 0
-    
-    assunto = f"✅ Revisão Concluída - {gc} - {mes_nome}/{ano}"
-    
-    corpo_email = f"""Olá,
-
-O GC {gc} concluiu a revisão da carteira de {mes_nome}/{ano}.
-
-📊 RESUMO DA REVISÃO:
-═══════════════════════════════════════════
-👤 GC: {gc}
-📅 Período: {mes_nome}/{ano}
-📋 Total de Pedidos: {total_pedidos}
-✅ Pedidos Revisados: {total_revisados}
-📈 % Conclusão: {perc_revisao:.1f}%
-🕐 Data/Hora: {datetime.now().strftime('%d/%m/%Y às %H:%M')}
-
-📎 DADOS DA REVISÃO (JSON):
-═══════════════════════════════════════════
-
-{dados_revisoes_json}
-
-═══════════════════════════════════════════
-
-🔄 PRÓXIMOS PASSOS:
-1. Copiar o JSON acima e salvar como arquivo .json
-2. Importar no dashboard principal
-3. Consolidar com outras revisões
-4. Gerar relatório final
-
-Att,
-{gc} - Sistema de Revisão de Carteira
-    """
-    
-    return assunto, corpo_email
 
 # Interface principal
 def main():
@@ -835,7 +443,6 @@ def main():
     hash_from_url = query_params.get("hash", None)
     mes_from_url = int(query_params.get("mes", 0)) if query_params.get("mes") else None
     ano_from_url = int(query_params.get("ano", 0)) if query_params.get("ano") else None
-    data_hash_from_url = query_params.get("data", None)
     
     if gc_from_url and hash_from_url and mes_from_url and ano_from_url:
         # Modo formulário para GC específico
@@ -843,83 +450,9 @@ def main():
         st.title(f"📋 Revisão de Carteira - {gc_from_url}")
         st.caption(f"Período: {mes_nome}/{ano_from_url}")
         
-        # Tentar recuperar dados em ordem de prioridade
-        df_original = None
-        
-        # 1. Tentar cache persistente com hash específico
-        if data_hash_from_url:
-            cache_result = load_data_from_persistent_cache(data_hash_from_url)
-            if cache_result:
-                df_original, _, _ = cache_result
-        
-        # 2. Tentar cache persistente sem hash específico
-        if df_original is None:
-            cache_result = load_data_from_persistent_cache()
-            if cache_result:
-                df_original, _, _ = cache_result
-        
-        # 3. Tentar cache em memória
-        if df_original is None and data_hash_from_url:
-            df_original = get_data_from_cache(data_hash_from_url)
-        
-        # 4. Tentar session_state
-        if df_original is None:
-            df_original = st.session_state.df_original
-        
-        if df_original is None:
-            # Interface limpa para GCs - sem detalhes técnicos
-            st.error("📋 Sistema Temporariamente Indisponível")
-            
-            st.markdown("""
-            ### 🔄 Aguarde um momento...
-            
-            Os dados da carteira estão sendo atualizados pelo sistema.
-            
-            **O que fazer:**
-            - ✅ Aguarde alguns minutos e recarregue a página
-            - ✅ Tente novamente em 5-10 minutos
-            - ✅ Se o problema persistir, entre em contato com a equipe
-            
-            **Não é um erro do seu lado** - é apenas uma atualização de rotina do sistema.
-            """)
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                if st.button("🔄 Recarregar Página", type="primary"):
-                    st.rerun()
-            
-            with col2:
-                st.markdown("📧 **Dúvidas?** Entre em contato com a equipe comercial")
-            
-            st.stop()
-            
-            with st.expander("� Instruções para Resolver", expanded=True):
-                st.markdown("""
-                **Como resolver este problema:**
-                
-                1. **Abra o dashboard principal** em uma nova aba
-                2. **Faça upload** do arquivo Excel da carteira
-                3. **Gere os links** novamente na seção "Links Personalizados"
-                4. **Use o novo link** gerado
-                
-                **Por que isso acontece?**
-                - Os dados não persistem entre sessões diferentes
-                - Cada link do GC precisa que os dados tenham sido carregados primeiro
-                
-                **Solução definitiva:**
-                - O administrador deve carregar os dados no dashboard principal
-                - Depois disso, os links funcionarão por algumas horas
-                """)
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                if st.button("🏠 Ir para Dashboard Principal", type="primary"):
-                    st.markdown(f"🔗 [Clique aqui para ir ao Dashboard](https://dash-carteira-review.streamlit.app)")
-            
-            with col2:
-                if st.button("🔄 Tentar Novamente"):
-                    st.rerun()
-            
+        # Verificar se há dados carregados
+        if st.session_state.df_original is None:
+            st.error("⚠️ Dados não encontrados. Entre em contato com o administrador.")
             st.stop()
         
         # Verificar hash de segurança
@@ -929,7 +462,7 @@ def main():
             st.stop()
         
         # Filtrar por mês de trabalho e aplicar revisões
-        df_mes = filtrar_por_mes_trabalho(df_original, mes_from_url, ano_from_url)
+        df_mes = filtrar_por_mes_trabalho(st.session_state.df_original, mes_from_url, ano_from_url)
         df_with_revisoes = apply_revisoes_to_dataframe(df_mes)
         formulario_revisao_gc(df_with_revisoes, gc_from_url, mes_from_url, ano_from_url)
         
@@ -978,13 +511,6 @@ def main():
                     # Salvar no session state
                     st.session_state.df_original = df
                     
-                    # Gerar e salvar hash dos dados
-                    data_hash = generate_data_hash(df)
-                    st.session_state.data_hash = data_hash
-                    
-                    # Salvar no cache persistente
-                    save_success = save_data_to_persistent_cache(df, data_hash)
-                    
                     # Filtrar por mês de trabalho
                     df_mes = filtrar_por_mes_trabalho(df, mes_selecionado, ano_selecionado)
                     
@@ -994,11 +520,6 @@ def main():
                     st.success(f"✅ Arquivo carregado")
                     st.info(f"📊 {len(df):,} registros totais")
                     st.info(f"📅 {len(df_mes):,} registros para {calendar.month_name[mes_selecionado]}/{ano_selecionado}")
-                    
-                    if save_success:
-                        st.success(f"🔗 Links personalizados prontos! Cache válido por 30 dias (Hash: {data_hash[:8]}...)")
-                    else:
-                        st.warning("⚠️ Cache temporário salvo apenas na sessão atual")
                     
                     # Botões para gerenciar revisões
                     col1, col2, col3 = st.columns(3)
@@ -1038,153 +559,8 @@ def main():
                             except Exception as e:
                                 st.error(f"❌ Erro ao carregar: {str(e)}")
                     
-                    # Seção para consolidar revisões dos GCs
-                    st.header("📥 Consolidar Revisões dos GCs")
-                    
-                    col1, col2 = st.columns([2, 1])
-                    
-                    with col1:
-                        # Upload múltiplo de arquivos de revisão
-                        arquivos_revisoes = st.file_uploader(
-                            "📂 Carregar Revisões dos GCs",
-                            type=['json'],
-                            accept_multiple_files=True,
-                            help="Selecione os arquivos JSON enviados pelos GCs",
-                            key="upload_revisoes_gcs"
-                        )
-                        
-                        if arquivos_revisoes:
-                            st.write(f"**📁 {len(arquivos_revisoes)} arquivo(s) selecionado(s):**")
-                            
-                            dados_consolidados = {}
-                            info_gcs = []
-                            
-                            for arquivo in arquivos_revisoes:
-                                try:
-                                    dados_gc = json.load(arquivo)
-                                    gc_nome = dados_gc.get('gc', 'GC Desconhecido')
-                                    total_revisoes = dados_gc.get('total_revisados', 0)
-                                    timestamp = dados_gc.get('timestamp', 'N/A')
-                                    
-                                    # Consolidar revisões
-                                    revisoes_gc = dados_gc.get('revisoes', {})
-                                    dados_consolidados.update(revisoes_gc)
-                                    
-                                    # Informações para exibir
-                                    info_gcs.append({
-                                        'Arquivo': arquivo.name,
-                                        'GC': gc_nome,
-                                        'Revisões': total_revisoes,
-                                        'Data/Hora': pd.to_datetime(timestamp).strftime('%d/%m/%Y %H:%M') if timestamp != 'N/A' else 'N/A'
-                                    })
-                                    
-                                except Exception as e:
-                                    st.error(f"❌ Erro ao processar {arquivo.name}: {str(e)}")
-                            
-                            if info_gcs:
-                                # Mostrar resumo dos arquivos
-                                df_info = pd.DataFrame(info_gcs)
-                                st.dataframe(df_info, use_container_width=True, hide_index=True)
-                                
-                                total_revisoes_consolidadas = sum([info['Revisões'] for info in info_gcs])
-                                st.success(f"✅ **Total consolidado:** {total_revisoes_consolidadas} revisões de {len(info_gcs)} GC(s)")
-                    
-                    with col2:
-                        if arquivos_revisoes and dados_consolidados:
-                            st.subheader("🔄 Ações")
-                            
-                            # Botão para aplicar todas as revisões
-                            if st.button("🔄 Consolidar Todas", type="primary", help="Aplica todas as revisões ao sistema"):
-                                # Atualizar session_state com as revisões consolidadas
-                                st.session_state.dados_revisao.update(dados_consolidados)
-                                st.success(f"✅ {len(dados_consolidados)} revisões consolidadas!")
-                                st.balloons()
-                                st.rerun()
-                            
-                            # Botão para baixar consolidado
-                            if st.button("💾 Baixar Consolidado", help="Baixa arquivo consolidado de todas as revisões"):
-                                timestamp = datetime.now().strftime('%Y%m%d_%H%M')
-                                consolidado = {
-                                    'consolidacao_timestamp': datetime.now().isoformat(),
-                                    'total_gcs': len(info_gcs),
-                                    'total_revisoes': len(dados_consolidados),
-                                    'gcs_participantes': [info['GC'] for info in info_gcs],
-                                    'revisoes': dados_consolidados
-                                }
-                                
-                                json_consolidado = json.dumps(consolidado, indent=2, default=str, ensure_ascii=False)
-                                
-                                st.download_button(
-                                    "📥 Download Consolidado",
-                                    data=json_consolidado,
-                                    file_name=f"revisoes_consolidadas_{mes_selecionado}_{ano_selecionado}_{timestamp}.json",
-                                    mime="application/json"
-                                )
-                        else:
-                            st.info("👆 Carregue arquivos de revisão para ver as opções de consolidação")
-                    
-                    # Instruções para consolidação
-                    with st.expander("📋 Como Consolidar Revisões dos GCs", expanded=False):
-                        st.markdown("""
-                        ### 🎯 Processo de Consolidação:
-                        
-                        **1. 📧 Receba os e-mails dos GCs**
-                        - Cada GC enviará um e-mail com o arquivo JSON anexo
-                        - Salve todos os arquivos em uma pasta
-                        
-                        **2. 📂 Carregue os arquivos**
-                        - Use "Carregar Revisões dos GCs"
-                        - Selecione múltiplos arquivos de uma vez
-                        - O sistema mostrará um resumo de cada GC
-                        
-                        **3. 🔄 Consolide tudo**
-                        - Clique em "Consolidar Todas"
-                        - Todas as revisões serão aplicadas ao dashboard
-                        - As métricas serão atualizadas automaticamente
-                        
-                        **4. 💾 Salve o resultado**
-                        - Use "Baixar Consolidado" para ter um backup
-                        - Exporte as métricas finais
-                        
-                        ---
-                        
-                        **✅ Vantagens:**
-                        - ✅ Cada GC trabalha independentemente
-                        - ✅ Consolidação centralizada e controlada
-                        - ✅ Rastreabilidade completa
-                        - ✅ Backup automático de todas as etapas
-                        """)
-                    
                     # Alerta sobre persistência
                     st.warning("⚠️ **IMPORTANTE**: As revisões não persistem entre sessões. Use 'Salvar Revisões' regularmente!")
-                    
-                    # Informações do cache
-                    cache_info = get_cache_info()
-                    if cache_info and cache_info['exists']:
-                        st.header("💾 Status do Cache")
-                        if not cache_info['expired']:
-                            st.success(f"✅ Cache ativo - {cache_info['records']:,} registros")
-                            st.info(f"📅 Expira em: {cache_info['expires_at'].strftime('%d/%m/%Y %H:%M')}")
-                        else:
-                            st.error("❌ Cache expirado")
-                            if st.button("🔄 Recarregar Cache"):
-                                # Força recarga se há dados no session_state
-                                if st.session_state.df_original is not None:
-                                    data_hash = generate_data_hash(st.session_state.df_original)
-                                    save_data_to_persistent_cache(st.session_state.df_original, data_hash)
-                                    st.rerun()
-                    else:
-                        # Tentar carregar cache existente na inicialização
-                        cache_result = load_data_from_persistent_cache()
-                        if cache_result:
-                            df_cache, hash_cache, timestamp_cache = cache_result
-                            st.header("💾 Cache Carregado")
-                            st.success(f"✅ Dados carregados do cache ({len(df_cache):,} registros)")
-                            st.info(f"📅 Carregado em: {timestamp_cache.strftime('%d/%m/%Y %H:%M')}")
-                            
-                            # Atualizar session state com dados do cache
-                            st.session_state.df_original = df_cache
-                            st.session_state.data_hash = hash_cache
                     
                     # Filtros adicionais
                     st.header("🔍 Filtros")
@@ -1250,7 +626,7 @@ def main():
                 st.metric("Total Geral", f"{metricas_geral['total_registros']:,}")
             
             with col2:
-                st.metric("Valor Total (R$ MM)", f"R$ {metricas_geral['total_valor']:.0f}")
+                st.metric("Valor Total (R$ MM)", f"R$ {metricas_geral['total_valor']:.2f}")
             
             with col3:
                 st.metric("Volume Total", f"{metricas_geral['total_volume']:,.0f}")
@@ -1275,8 +651,8 @@ def main():
                 
                 with col2:
                     delta_valor = metricas['total_valor'] - metricas_geral['total_valor']
-                    st.metric("Valor Filtrado (R$ MM)", f"R$ {metricas['total_valor']:.0f}",
-                             f"R$ {delta_valor:+.0f}")
+                    st.metric("Valor Filtrado (R$ MM)", f"R$ {metricas['total_valor']:.2f}",
+                             f"R$ {delta_valor:+.2f}")
                 
                 with col3:
                     delta_volume = metricas['total_volume'] - metricas_geral['total_volume']
@@ -1306,7 +682,7 @@ def main():
             }).round(2)
             
             credito_stats.columns = ['Qtd_Pedidos', 'Valor_Total', 'Volume_Total', 'Revisados', 'Total_Rev', 'Alterados']
-            credito_stats['Valor_MM'] = (credito_stats['Valor_Total'] / 1_000_000).round(0)
+            credito_stats['Valor_MM'] = (credito_stats['Valor_Total'] / 1_000_000).round(2)
             credito_stats['Perc_Revisao'] = (credito_stats['Revisados'] / credito_stats['Total_Rev'] * 100).round(1)
             credito_stats['Perc_Alteracao'] = (credito_stats['Alterados'] / credito_stats['Total_Rev'] * 100).round(1)
             credito_stats = credito_stats.reset_index()
@@ -1387,68 +763,8 @@ def main():
                 fig_valor.update_layout(height=400)
                 st.plotly_chart(fig_valor, use_container_width=True)
             
-            # Seção de links personalizados e e-mails
-            st.header("📧 Geração de E-mails e Links Personalizados")
-            
-            # Status de conclusão por GC
-            st.subheader("📊 Status de Conclusão por GC")
-            
-            # Calcular estatísticas de cada GC
-            status_gcs = []
-            for gc in df['GC'].dropna().unique():
-                df_gc = df[df['GC'] == gc]
-                total_gc = len(df_gc)
-                revisados_gc = df_gc['Revisao_Realizada'].sum()
-                perc_gc = (revisados_gc / total_gc * 100) if total_gc > 0 else 0
-                
-                # Verificar se GC tem revisões na sessão atual
-                revisoes_sessao = len([k for k, v in st.session_state.dados_revisao.items() 
-                                     if v.get('gc') == gc])
-                
-                status = "🟢 Completo" if perc_gc >= 100 else "🟡 Em Andamento" if perc_gc > 0 else "🔴 Pendente"
-                
-                status_gcs.append({
-                    'GC': gc,
-                    'Status': status,
-                    'Revisados': f"{revisados_gc}/{total_gc}",
-                    'Progresso': f"{perc_gc:.1f}%",
-                    'Revisões Sessão': revisoes_sessao
-                })
-            
-            df_status = pd.DataFrame(status_gcs)
-            
-            # Mostrar em colunas para melhor visualização
-            col1, col2 = st.columns([2, 1])
-            
-            with col1:
-                st.dataframe(
-                    df_status,
-                    column_config={
-                        "Status": st.column_config.TextColumn("Status"),
-                        "Progresso": st.column_config.ProgressColumn(
-                            "% Progresso",
-                            help="Percentual de pedidos revisados",
-                            min_value=0,
-                            max_value=100
-                        )
-                    },
-                    use_container_width=True,
-                    hide_index=True
-                )
-            
-            with col2:
-                # Resumo geral
-                total_gcs = len(status_gcs)
-                completos = len([s for s in status_gcs if s['Status'] == '🟢 Completo'])
-                em_andamento = len([s for s in status_gcs if s['Status'] == '🟡 Em Andamento'])
-                pendentes = len([s for s in status_gcs if s['Status'] == '🔴 Pendente'])
-                
-                st.metric("Total GCs", total_gcs)
-                st.metric("✅ Completos", completos)
-                st.metric("🟡 Em Andamento", em_andamento)
-                st.metric("🔴 Pendentes", pendentes)
-            
-            st.markdown("---")
+            # Seção de links personalizados
+            st.header("🔗 Links Personalizados para GCs")
             
             links_gc = generate_personalized_links(df, mes_selecionado, ano_selecionado)
             
@@ -1462,7 +778,7 @@ def main():
                 dados_links.append({
                     'GC': gc,
                     'Total_Pedidos': info['pedidos'],
-                    'Valor_MM': f"R$ {info['valor']:.0f}",
+                    'Valor_MM': f"R$ {info['valor']:.2f}",
                     'Volume': f"{info['volume']:,.0f}",
                     'Revisados': f"{revisados}/{total_gc}",
                     'Perc_Revisao': f"{perc_rev:.1f}%",
@@ -1548,7 +864,7 @@ def main():
                     st.code(assunto)
                     
                     st.write("**Corpo do E-mail:**")
-                    st.text_area("Corpo do E-mail", value=corpo, height=400, disabled=True, label_visibility="collapsed")
+                    st.text_area("", value=corpo, height=400, disabled=True)
             
             # Detalhamento por grupo para cada GC
             st.header("📊 Detalhamento por GC e Grupo")
@@ -1567,7 +883,7 @@ def main():
                 with col1:
                     st.subheader(f"📋 Resumo - {gc_detalhes}")
                     st.metric("Pedidos", info_gc['pedidos'])
-                    st.metric("Valor", f"R$ {info_gc['valor']:.0f}M")
+                    st.metric("Valor", f"R$ {info_gc['valor']:.2f}M")
                     st.metric("Volume", f"{info_gc['volume']:,.0f}")
                 
                 with col2:
@@ -1600,39 +916,20 @@ def main():
                 st.header("📋 Resumo das Revisões Realizadas")
                 
                 revisoes_df = []
-                for revisao_key, dados in st.session_state.dados_revisao.items():
-                    # Determinar ordem e material baseado no formato da chave
-                    if '_' in revisao_key and 'ordem' in dados and 'material' in dados:
-                        # Formato novo: ordem_material
-                        ordem = dados['ordem']
-                        material = dados['material']
-                        ordem_info = df[(df['Ord.venda'] == ordem) & (df['Material'] == material)]
-                    else:
-                        # Formato antigo: só ordem (compatibilidade)
-                        ordem = revisao_key if isinstance(revisao_key, (int, str)) else dados.get('ordem', revisao_key)
-                        material = 'N/A'
-                        ordem_info = df[df['Ord.venda'] == ordem]
-                    
-                    # Buscar informações da ordem/material no dataframe
-                    if not ordem_info.empty:
-                        cliente = ordem_info['Nome Emissor'].iloc[0]
-                        grupo = ordem_info['Grupo'].iloc[0]
-                        produto = ordem_info['Desc. Material'].iloc[0]
-                    else:
-                        cliente = 'N/A'
-                        grupo = 'N/A'
-                        produto = 'N/A'
+                for ordem, dados in st.session_state.dados_revisao.items():
+                    # Buscar informações da ordem no dataframe
+                    ordem_info = df[df['Ord.venda'] == ordem]
+                    cliente = ordem_info['Nome Emissor'].iloc[0] if not ordem_info.empty else 'N/A'
+                    grupo = ordem_info['Grupo'].iloc[0] if not ordem_info.empty else 'N/A'
                     
                     revisoes_df.append({
                         'Ordem': ordem,
-                        'Material': material if material != 'sem_material' else 'N/A',
                         'GC': dados['gc'],
                         'Cliente': cliente,
-                        'Produto': produto,
                         'Grupo': grupo,
                         'Data_Revisao': pd.to_datetime(dados['data_revisao']).strftime('%d/%m/%Y %H:%M'),
-                        'Acao': 'Data Alterada' if dados.get('nova_data') else 'Confirmado',
-                        'Nova_Data': pd.to_datetime(dados['nova_data']).strftime('%d/%m/%Y') if dados.get('nova_data') else '-',
+                        'Acao': 'Data Alterada' if dados['nova_data'] else 'Confirmado',
+                        'Nova_Data': pd.to_datetime(dados['nova_data']).strftime('%d/%m/%Y') if dados['nova_data'] else '-',
                         'Justificativa': dados.get('justificativa', '-')
                     })
                 
@@ -1684,7 +981,7 @@ def main():
             
             **1. Dashboard Principal (Admin):**
             - Upload do arquivo Excel da carteira
-            - Filtro automático por mês de trabalho (coluna `Revisão Data Faturamento`)
+            - Filtro automático por mês de trabalho (coluna `1ª.DT.DIV.REM`)
             - Geração de links personalizados para cada GC
             - Criação automática de e-mails via Outlook
             - Métricas em tempo real de revisão
