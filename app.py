@@ -656,125 +656,47 @@ def formulario_revisao_gc(df, gc_selecionado, mes, ano):
             
             revisoes_json = json.dumps(dados_envio, indent=2, default=str, ensure_ascii=False)
             
-            # Duas opções para o GC
-            col_download, col_email = st.columns(2)
+            # Botão de download das revisões
+            st.download_button(
+                "📱 Baixar Backup",
+                data=revisoes_json,
+                file_name=nome_arquivo,
+                mime="application/json",
+                help="Baixa suas revisões para enviar ao Otávio",
+                type="primary"
+            )
             
-            with col_download:
-                st.markdown("**💾 Opção 1: Backup Local**")
-                # Botão de download das revisões (para backup pessoal)
-                st.download_button(
-                    "� Baixar Backup (Opcional)",
-                    data=revisoes_json,
-                    file_name=nome_arquivo,
-                    mime="application/json",
-                    help="Backup pessoal das suas revisões",
-                    type="secondary"
-                )
-                st.caption("Para seu controle pessoal")
-            
-            with col_email:
-                st.markdown("**📧 Opção 2: Enviar Direto**")
-                # Botão para gerar e-mail com JSON inline
-                if st.button("📧 Enviar E-mail Completo", help="Envia e-mail com dados inclusos - SEM ANEXO!", type="primary"):
-                    assunto, corpo = gerar_email_conclusao_gc(
-                        gc_selecionado, len(revisoes_gc), total_pedidos_gc, 
-                        mes, ano, revisoes_json
-                    )
-                    
-                    sucesso = abrir_outlook_com_email(email_admin, assunto, corpo)
-                    if sucesso:
-                        st.success("✅ E-mail pronto para envio!")
-                        st.info("🎉 **TUDO INCLUÍDO!** Só clicar 'Enviar' no seu e-mail!")
-                    else:
-                        # Fallback: mostrar informações para envio manual
-                        st.warning("⚠️ Vamos fazer manualmente - é mais fácil! 😊")
-                        
-                        st.markdown("### 📧 **COPIE E COLE NO SEU E-MAIL:**")
-                        
-                        # Informações em formato fácil de copiar
-                        st.markdown("**📧 Para:**")
-                        st.code(email_admin, language=None)
-                        
-                        st.markdown("**📋 Assunto:**")
-                        st.text_area("Copie o assunto:", value=assunto, height=60, key="assunto_copy_new")
-                        
-                        st.markdown("**📝 Mensagem (COM DADOS INCLUSOS):**")
-                        st.text_area("Copie TODA a mensagem:", value=corpo, height=300, key="corpo_copy_new")
-                        
-                        st.success("✅ **SEM ANEXO NECESSÁRIO!** Tudo está na mensagem!")
-                
-                st.caption("✨ Recomendado - Mais fácil!")
+            # Orientação simples
+            st.success("✅ Agora envie o arquivo baixado para:")
+            st.info("📧 **E-mail:** otavio.monteiro@icl-group.com")
+            st.info("💬 **Teams:** Otávio Monteiro")
+            st.caption(f"📎 **Assunto:** Revisão Carteira - {gc_selecionado} - {mes_nome}/{ano}")
         else:
             st.warning("⚠️ Faça pelo menos uma revisão antes de enviar!")
     
     # Instruções para o GC
-    with st.expander("� Como Finalizar sua Revisão", expanded=False):
-                assunto, corpo = gerar_email_conclusao_gc(
-                    gc_selecionado, len(revisoes_gc), total_pedidos_gc, 
-                    mes, ano, nome_arquivo
-                )
-                
-                sucesso = abrir_outlook_com_email(email_admin, assunto, corpo)
-                if sucesso:
-                    st.success("✅ E-mail aberto! Anexe o arquivo JSON e envie!")
-                    st.info("💡 **IMPORTANTE:** Anexe o arquivo JSON que você baixou!")
-                else:
-                    # Fallback: mostrar informações para envio manual
-                    st.warning("⚠️ Vamos fazer manualmente - é mais fácil! 😊")
-                    
-                    st.markdown("### 📧 **COPIE E COLE NO SEU E-MAIL:**")
-                    
-                    # Informações em formato fácil de copiar
-                    col_a, col_b = st.columns(2)
-                    
-                    with col_a:
-                        st.markdown("**📧 Para:**")
-                        st.code(email_admin, language=None)
-                        
-                        st.markdown("**� Assunto:**")
-                        st.text_area("Copie o assunto:", value=assunto, height=60, key="assunto_copy")
-                    
-                    with col_b:
-                        st.markdown("**📝 Mensagem:**")
-                        st.text_area("Copie a mensagem:", value=corpo, height=200, key="corpo_copy")
-                    
-                    st.error(f"📎 **NÃO ESQUEÇA:** Anexar o arquivo `{nome_arquivo}`")
-                    
-                    st.markdown("---")
-                    st.info("💡 **Dica:** Abra seu e-mail, copie e cole as informações acima, anexe o arquivo JSON e envie!")
-    
-    # Instruções para o GC
     with st.expander("📋 Como Finalizar sua Revisão", expanded=False):
         st.markdown(f"""
-        ### 🎯 Passos para Concluir:
+        ### 🎯 Passos Simples:
         
         **1. ✅ Revise todos os pedidos**
-        - Para cada pedido, clique em "✅ OK" se a data está correta
-        - Ou clique em "📅 Revisar" para alterar a data
+        - Clique "✅ OK" se a data está correta
+        - Clique "� Revisar" para alterar a data
         
-        **2. 📤 Baixe suas revisões**
-        - Clique em "📤 Baixar Minhas Revisões"
+        **2. 📤 Quando terminar**
+        - Clique em "📱 Baixar Backup" acima
         - Salve o arquivo no seu computador
         
-        **3. 📧 Notifique o administrador**
-        - Informe o e-mail do administrador
-        - Clique em "📧 Enviar E-mail de Conclusão"
-        - **IMPORTANTE:** Anexe o arquivo JSON no e-mail!
+        **3. 📧 Envie para o Otávio**
+        - **E-mail:** otavio.monteiro@icl-group.com
+        - **Teams:** Otávio Monteiro  
+        - **Anexe** o arquivo JSON baixado
+        - **Assunto:** "Revisão Carteira - [SEU NOME] - {mes_nome}/{ano}"
         
-        **4. 🎉 Pronto!**
-        - Suas revisões serão consolidadas no dashboard principal
-        - Você receberá confirmação quando tudo estiver processado
-        
-        ---
-        
-        **❓ Dúvidas?**
-        - ✅ Suas revisões são salvas automaticamente enquanto você trabalha
-        - ✅ Você pode fechar e voltar ao link a qualquer momento
-        - ✅ O arquivo JSON contém todas as suas decisões de forma segura
+        **🎉 Pronto! Só isso!**
         """)
     
     st.markdown("---")
-
 # Função para gerar e-mail de notificação de conclusão
 def gerar_email_conclusao_gc(gc, total_revisados, total_pedidos, mes, ano, dados_revisoes_json):
     """Gera e-mail de notificação quando GC termina revisão"""
